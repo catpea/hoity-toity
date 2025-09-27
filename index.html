@@ -1,74 +1,59 @@
-<!doctype html>
-<html lang="en">
-
-  <!-- TODO: THIS IS BASICALLY A DEMO DISGUIDED AS A FULLY FUNCTIONAL CODEBIN THAT SAVES TO LOCAL STORAGE -->
-  <!-- NOTE: index.html is placed in root of the repository for github pages -->
-  <!-- NOTE: use darkmode/solarized as default -->
+<html lang="en" data-bs-theme="dark">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hoity Toity Codebin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
-    <script src="hoity-toity.js"></script>
-
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦊</text></svg>" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous" />
+    <script src="codebin/output-preview.js"></script>
     <script type="importmap">
       {
         "imports": {
-          "codebin": "./demo/Codebin.js"
+          "codebin": "./codebin/Codebin.js",
+          "microplugins": "./codebin/Microplugins.js"
         }
       }
     </script>
-    <!--
-    NOTE: using raw ./demo/Codebin.js because it is just simple plain code, no bundler needed
-    -->
   </head>
   <body>
-
-
-
-    <div class="card-group vh-50">
-      <div class="card">
-        <hoity-toity id="js" language="javascript"></hoity-toity>
-      </div>
-      <div class="card">
-        <hoity-toity id="css" language="css"></hoity-toity>
-      </div>
-      <div class="card">
-        <hoity-toity id="html" language="html"></hoity-toity>
-      </div>
-    </div>
-
-    <div class="container-fluid vh-50">
+    <div class="container-fluid">
       <div class="row">
-        <div id="preview" class="col">
-          TODO! write to this container from Codebin.js instance
+        <div class="col" style="min-height: 50vh">
+          <output-preview id="preview" html="<h1>Hello World</h1>"></output-preview>
         </div>
       </div>
       <div class="row">
-        <ul class="nav nav-underline">
-          <li class="nav-item">
-            <a class="nav-link active" aria-current="page" href="#">HTML</a>
-          </li>
-          <li class="nav-item">
-            <!-- messages from custom logger nothing fancy -->
-            <!-- maybe this should toggle a 10/2 col split -->
-            <a class="nav-link" href="#">Console</a>
-          </li>
-        </ul>
+        <div class="col">
+          <p >
+            <button class="btn btn-outline-secondary btn-sm active" type="button" data-function="columnToggler" data-target="collapseJs">JS</button>
+            <button class="btn btn-outline-secondary btn-sm active" type="button" data-function="columnToggler" data-target="collapseCss">CSS</button>
+            <button class="btn btn-outline-secondary btn-sm active" type="button" data-function="columnToggler" data-target="collapseHtml">HTML</button>
+          </p>
+        </div>
+      </div>
+      <div class="row">
+          <div id="collapseJs" class="col col-shown" style="">
+            <hoity-toity id="js" language="javascript"></hoity-toity>
+          </div>
+          <div id="collapseCss" class="col col-shown" style="">
+            <hoity-toity id="css" language="css"></hoity-toity>
+          </div>
+          <div id="collapseHtml" class="col col-shown" style="">
+            <hoity-toity id="html" language="html"></hoity-toity>
+          </div>
       </div>
     </div>
-
     <script type="module">
-
-      import { Codebin } from 'codebin';
+      import { Microplugins } from "microplugins";
+      import { Codebin } from "codebin";
 
       const codebin = new Codebin({
-        js: document.getElementById('js'),
-        css: document.getElementById('css'),
-        html: document.getElementById('html'),
-        preview: document.getElementById('preview'),
+        js: document.getElementById("js"),
+        css: document.getElementById("css"),
+        html: document.getElementById("html"),
+        preview: document.getElementById("preview"),
       });
-
+      const microplugins = new Microplugins(); // call microplugins.terminate() when done
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
   </body>

@@ -2,10 +2,11 @@ import {EditorView, basicSetup} from "codemirror"
 import {javascript} from "@codemirror/lang-javascript"
 import {html} from "@codemirror/lang-html"
 import {css} from "@codemirror/lang-css"
+import {oneDark} from "@codemirror/theme-one-dark"
 
 // Create a class for the element
 class HoityToity extends HTMLElement {
-  static observedAttributes = ["language", "theme", "value"];
+  static observedAttributes = ["language", "theme", "value", "wrap"];
 
   constructor() {
     super();
@@ -14,14 +15,13 @@ class HoityToity extends HTMLElement {
   }
 
   connectedCallback() {
-    console.log("Custom element added to page.");
+    // console.log("Custom element added to page.");
 
     // Create container and styles
     this.shadowRoot.innerHTML = `
       <style>
         :host {
           display: block;
-          border: 1px solid #ddd;
           border-radius: 4px;
           overflow: hidden;
         }
@@ -44,32 +44,49 @@ class HoityToity extends HTMLElement {
 
     // Get initial values from attributes
     const language = this.getAttribute('language') || 'javascript';
+    const theme = this.getAttribute('theme') || 'dark';
+    const wrap = this.getAttribute('wrap') || false;
     const initialValue = this.getAttribute('value') || this.getDefaultCode(language);
+
+    // Build extensions array
+    const extensions = [
+      basicSetup,
+      this.getLanguageExtension(language)
+    ];
+
+    // Add theme if specified
+    if (theme === 'dark') {
+      extensions.push(oneDark);
+    }
+
+    // enable wrap if needed
+    if (wrap) {
+      extensions.push(EditorView.lineWrapping);
+    }
+
+    // Add update listener extension
+    extensions.push(EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        this.dispatchEvent(new CustomEvent('change', {
+          detail: {
+            value: update.state.doc.toString()
+          },
+          bubbles: true,
+          composed: true
+        }));
+      }
+    }));
 
     // Create editor with appropriate language support
     this.editor = new EditorView({
       doc: initialValue,
-      extensions: [
-        basicSetup,
-        this.getLanguageExtension(language)
-      ],
+      extensions: extensions,
       parent: container
-    });
-
-    // Dispatch custom event when content changes
-    this.editor.dom.addEventListener('input', () => {
-      this.dispatchEvent(new CustomEvent('change', {
-        detail: {
-          value: this.editor.state.doc.toString()
-        },
-        bubbles: true,
-        composed: true
-      }));
     });
   }
 
   disconnectedCallback() {
-    console.log("Custom element removed from page.");
+    // console.log("Custom element removed from page.");
     if (this.editor) {
       this.editor.destroy();
       this.editor = null;
@@ -77,7 +94,7 @@ class HoityToity extends HTMLElement {
   }
 
   adoptedCallback() {
-    console.log("Custom element moved to new page.");
+    // console.log("Custom element moved to new page.");
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
@@ -124,7 +141,8 @@ class HoityToity extends HTMLElement {
     <title>Document</title>
 </head>
 <body>
-    <h1>Hello World</h1>
+    <h1>Hello World!</h1>
+    <small>this is a live preview of the code below</small>
 </body>
 </html>`;
       case 'css':
@@ -135,15 +153,17 @@ body {
   padding: 20px;
 }
 
-h1 {
-  color: #333;
+h1, small {
+  color: orangered;
 }`;
       case 'javascript':
       case 'js':
       default:
-        return `// Your JavaScript here
+        return `// Your JavaScript here (hit F12 to open up the standard console)
 function greet(name) {
-  console.log(\`Hello, \${name}!\`);
+  const msg = \`Hello, \${name}!\`;
+  console.log(msg);
+  document.querySelector('h1').innerText = msg;
 }
 
 greet('World');`;
@@ -154,30 +174,41 @@ greet('World');`;
     // To change language, we need to recreate the editor
     // Store current content
     const currentValue = this.editor.state.doc.toString();
+    const theme = this.getAttribute('theme') || 'dark';
 
     // Destroy old editor
     this.editor.destroy();
+
+    // Build extensions array
+    const extensions = [
+      basicSetup,
+      this.getLanguageExtension(language)
+    ];
+
+    // Add theme if specified
+    if (theme === 'dark') {
+      extensions.push(oneDark);
+    }
+
+    // Add update listener extension
+    extensions.push(EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        this.dispatchEvent(new CustomEvent('change', {
+          detail: {
+            value: update.state.doc.toString()
+          },
+          bubbles: true,
+          composed: true
+        }));
+      }
+    }));
 
     // Create new editor with new language
     const container = this.shadowRoot.querySelector('.editor-container');
     this.editor = new EditorView({
       doc: currentValue,
-      extensions: [
-        basicSetup,
-        this.getLanguageExtension(language)
-      ],
+      extensions: extensions,
       parent: container
-    });
-
-    // Re-attach event listener
-    this.editor.dom.addEventListener('input', () => {
-      this.dispatchEvent(new CustomEvent('change', {
-        detail: {
-          value: this.editor.state.doc.toString()
-        },
-        bubbles: true,
-        composed: true
-      }));
     });
   }
 

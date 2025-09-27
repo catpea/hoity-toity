@@ -1,4 +1,5 @@
-./hoity-toity.js in root of the repository contains 25,500 lines of compiled CodeMirror code, you may want to adoid reading it.
+- ignore content of node_modules
+- ./hoity-toity.js in root of the repository contains 25,500 lines of compiled CodeMirror code, please avoid reading it.
+- index.html is for github pages, it is basically a <hoity-toity> demo, that also doubles as a paste bin.
 - use es6 modules and latest javascript
-- script should be type import
-- we don't care for older browsers
+- we don't care for older browsers, browsers upgrade fast now

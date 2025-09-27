@@ -10,7 +10,7 @@
 
 ```html
 <!-- Basic usage -->
-<hoity-toity language="javascript"></hoity-toity>
+<hoity-toity language="javascript" wrap="true"></hoity-toity>
 
 <!-- With initial value -->
 <hoity-toity language="html" value="<h1>Hello</h1>"></hoity-toity>

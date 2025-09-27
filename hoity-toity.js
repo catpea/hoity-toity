@@ -29289,9 +29289,117 @@
       return true;
   });
 
+  // Using https://github.com/one-dark/vscode-one-dark-theme/ as reference for the colors
+  const chalky = "#e5c07b", coral = "#e06c75", cyan = "#56b6c2", invalid = "#ffffff", ivory = "#abb2bf", stone = "#7d8799", // Brightened compared to original to increase contrast
+  malibu = "#61afef", sage = "#98c379", whiskey = "#d19a66", violet = "#c678dd", darkBackground = "#21252b", highlightBackground = "#2c313a", background = "#282c34", tooltipBackground = "#353a42", selection = "#3E4451", cursor = "#528bff";
+  /**
+  The editor theme styles for One Dark.
+  */
+  const oneDarkTheme = /*@__PURE__*/EditorView.theme({
+      "&": {
+          color: ivory,
+          backgroundColor: background
+      },
+      ".cm-content": {
+          caretColor: cursor
+      },
+      ".cm-cursor, .cm-dropCursor": { borderLeftColor: cursor },
+      "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: selection },
+      ".cm-panels": { backgroundColor: darkBackground, color: ivory },
+      ".cm-panels.cm-panels-top": { borderBottom: "2px solid black" },
+      ".cm-panels.cm-panels-bottom": { borderTop: "2px solid black" },
+      ".cm-searchMatch": {
+          backgroundColor: "#72a1ff59",
+          outline: "1px solid #457dff"
+      },
+      ".cm-searchMatch.cm-searchMatch-selected": {
+          backgroundColor: "#6199ff2f"
+      },
+      ".cm-activeLine": { backgroundColor: "#6699ff0b" },
+      ".cm-selectionMatch": { backgroundColor: "#aafe661a" },
+      "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
+          backgroundColor: "#bad0f847"
+      },
+      ".cm-gutters": {
+          backgroundColor: background,
+          color: stone,
+          border: "none"
+      },
+      ".cm-activeLineGutter": {
+          backgroundColor: highlightBackground
+      },
+      ".cm-foldPlaceholder": {
+          backgroundColor: "transparent",
+          border: "none",
+          color: "#ddd"
+      },
+      ".cm-tooltip": {
+          border: "none",
+          backgroundColor: tooltipBackground
+      },
+      ".cm-tooltip .cm-tooltip-arrow:before": {
+          borderTopColor: "transparent",
+          borderBottomColor: "transparent"
+      },
+      ".cm-tooltip .cm-tooltip-arrow:after": {
+          borderTopColor: tooltipBackground,
+          borderBottomColor: tooltipBackground
+      },
+      ".cm-tooltip-autocomplete": {
+          "& > ul > li[aria-selected]": {
+              backgroundColor: highlightBackground,
+              color: ivory
+          }
+      }
+  }, { dark: true });
+  /**
+  The highlighting style for code in the One Dark theme.
+  */
+  const oneDarkHighlightStyle = /*@__PURE__*/HighlightStyle.define([
+      { tag: tags$1.keyword,
+          color: violet },
+      { tag: [tags$1.name, tags$1.deleted, tags$1.character, tags$1.propertyName, tags$1.macroName],
+          color: coral },
+      { tag: [/*@__PURE__*/tags$1.function(tags$1.variableName), tags$1.labelName],
+          color: malibu },
+      { tag: [tags$1.color, /*@__PURE__*/tags$1.constant(tags$1.name), /*@__PURE__*/tags$1.standard(tags$1.name)],
+          color: whiskey },
+      { tag: [/*@__PURE__*/tags$1.definition(tags$1.name), tags$1.separator],
+          color: ivory },
+      { tag: [tags$1.typeName, tags$1.className, tags$1.number, tags$1.changed, tags$1.annotation, tags$1.modifier, tags$1.self, tags$1.namespace],
+          color: chalky },
+      { tag: [tags$1.operator, tags$1.operatorKeyword, tags$1.url, tags$1.escape, tags$1.regexp, tags$1.link, /*@__PURE__*/tags$1.special(tags$1.string)],
+          color: cyan },
+      { tag: [tags$1.meta, tags$1.comment],
+          color: stone },
+      { tag: tags$1.strong,
+          fontWeight: "bold" },
+      { tag: tags$1.emphasis,
+          fontStyle: "italic" },
+      { tag: tags$1.strikethrough,
+          textDecoration: "line-through" },
+      { tag: tags$1.link,
+          color: stone,
+          textDecoration: "underline" },
+      { tag: tags$1.heading,
+          fontWeight: "bold",
+          color: coral },
+      { tag: [tags$1.atom, tags$1.bool, /*@__PURE__*/tags$1.special(tags$1.variableName)],
+          color: whiskey },
+      { tag: [tags$1.processingInstruction, tags$1.string, tags$1.inserted],
+          color: sage },
+      { tag: tags$1.invalid,
+          color: invalid },
+  ]);
+  /**
+  Extension to enable the One Dark theme (both the editor theme and
+  the highlight style).
+  */
+  const oneDark = [oneDarkTheme, /*@__PURE__*/syntaxHighlighting(oneDarkHighlightStyle)];
+
   // Create a class for the element
   class HoityToity extends HTMLElement {
-    static observedAttributes = ["language", "theme", "value"];
+    static observedAttributes = ["language", "theme", "value", "wrap"];
 
     constructor() {
       super();
@@ -29300,14 +29408,13 @@
     }
 
     connectedCallback() {
-      console.log("Custom element added to page.");
+      // console.log("Custom element added to page.");
 
       // Create container and styles
       this.shadowRoot.innerHTML = `
       <style>
         :host {
           display: block;
-          border: 1px solid #ddd;
           border-radius: 4px;
           overflow: hidden;
         }
@@ -29330,32 +29437,49 @@
 
       // Get initial values from attributes
       const language = this.getAttribute('language') || 'javascript';
+      const theme = this.getAttribute('theme') || 'dark';
+      const wrap = this.getAttribute('wrap') || false;
       const initialValue = this.getAttribute('value') || this.getDefaultCode(language);
+
+      // Build extensions array
+      const extensions = [
+        basicSetup,
+        this.getLanguageExtension(language)
+      ];
+
+      // Add theme if specified
+      if (theme === 'dark') {
+        extensions.push(oneDark);
+      }
+
+      // enable wrap if needed
+      if (wrap) {
+        extensions.push(EditorView.lineWrapping);
+      }
+
+      // Add update listener extension
+      extensions.push(EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          this.dispatchEvent(new CustomEvent('change', {
+            detail: {
+              value: update.state.doc.toString()
+            },
+            bubbles: true,
+            composed: true
+          }));
+        }
+      }));
 
       // Create editor with appropriate language support
       this.editor = new EditorView({
         doc: initialValue,
-        extensions: [
-          basicSetup,
-          this.getLanguageExtension(language)
-        ],
+        extensions: extensions,
         parent: container
-      });
-
-      // Dispatch custom event when content changes
-      this.editor.dom.addEventListener('input', () => {
-        this.dispatchEvent(new CustomEvent('change', {
-          detail: {
-            value: this.editor.state.doc.toString()
-          },
-          bubbles: true,
-          composed: true
-        }));
       });
     }
 
     disconnectedCallback() {
-      console.log("Custom element removed from page.");
+      // console.log("Custom element removed from page.");
       if (this.editor) {
         this.editor.destroy();
         this.editor = null;
@@ -29363,7 +29487,7 @@
     }
 
     adoptedCallback() {
-      console.log("Custom element moved to new page.");
+      // console.log("Custom element moved to new page.");
     }
 
     attributeChangedCallback(name, oldValue, newValue) {
@@ -29410,7 +29534,8 @@
     <title>Document</title>
 </head>
 <body>
-    <h1>Hello World</h1>
+    <h1>Hello World!</h1>
+    <small>this is a live preview of the code below</small>
 </body>
 </html>`;
         case 'css':
@@ -29421,15 +29546,17 @@ body {
   padding: 20px;
 }
 
-h1 {
-  color: #333;
+h1, small {
+  color: orangered;
 }`;
         case 'javascript':
         case 'js':
         default:
-          return `// Your JavaScript here
+          return `// Your JavaScript here (hit F12 to open up the standard console)
 function greet(name) {
-  console.log(\`Hello, \${name}!\`);
+  const msg = \`Hello, \${name}!\`;
+  console.log(msg);
+  document.querySelector('h1').innerText = msg;
 }
 
 greet('World');`;
@@ -29440,30 +29567,41 @@ greet('World');`;
       // To change language, we need to recreate the editor
       // Store current content
       const currentValue = this.editor.state.doc.toString();
+      const theme = this.getAttribute('theme') || 'dark';
 
       // Destroy old editor
       this.editor.destroy();
+
+      // Build extensions array
+      const extensions = [
+        basicSetup,
+        this.getLanguageExtension(language)
+      ];
+
+      // Add theme if specified
+      if (theme === 'dark') {
+        extensions.push(oneDark);
+      }
+
+      // Add update listener extension
+      extensions.push(EditorView.updateListener.of((update) => {
+        if (update.docChanged) {
+          this.dispatchEvent(new CustomEvent('change', {
+            detail: {
+              value: update.state.doc.toString()
+            },
+            bubbles: true,
+            composed: true
+          }));
+        }
+      }));
 
       // Create new editor with new language
       const container = this.shadowRoot.querySelector('.editor-container');
       this.editor = new EditorView({
         doc: currentValue,
-        extensions: [
-          basicSetup,
-          this.getLanguageExtension(language)
-        ],
+        extensions: extensions,
         parent: container
-      });
-
-      // Re-attach event listener
-      this.editor.dom.addEventListener('input', () => {
-        this.dispatchEvent(new CustomEvent('change', {
-          detail: {
-            value: this.editor.state.doc.toString()
-          },
-          bubbles: true,
-          composed: true
-        }));
       });
     }
 
