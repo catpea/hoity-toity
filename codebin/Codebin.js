@@ -26,6 +26,8 @@ export class Codebin {
   }
 
   updatePreview() {
+    console.log(this, this.editors)
+    console.log(this.editors.html)
     const html = this.editors.html.getValue();
     const css  = this.editors.css.getValue();
     const js   = this.editors.js.getValue();

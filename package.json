@@ -6,7 +6,7 @@
   "main": "hoity-toity.js",
   "scripts": {
     "demo": "http-server -c-1 -o .",
-    "build": "node_modules/.bin/rollup ./src/hoity-toity.js -f iife -o hoity-toity.js -p @rollup/plugin-node-resolve",
+    "build": "rollup ./src/hoity-toity.js -f iife -o hoity-toity.js -p @rollup/plugin-node-resolve",
     "save": "git add .; git commit -m 'Updated Release'; npm version patch; npm publish; git push --follow-tags;"
   },
   "keywords": [
