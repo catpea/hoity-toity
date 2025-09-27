@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+
+  <!-- TODO: THIS IS BASICALLY A DEMO DISGUIDED AS A FULLY FUNCTIONAL CODEBIN THAT SAVES TO LOCAL STORAGE -->
+  <!-- NOTE: index.html is placed in root of the repository for github pages -->
+  <!-- NOTE: use darkmode/solarized as default -->
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hoity Toity Codebin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    <script src="hoity-toity.js"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "codebin": "./demo/Codebin.js"
+        }
+      }
+    </script>
+    <!--
+    NOTE: using raw ./demo/Codebin.js because it is just simple plain code, no bundler needed
+    -->
+  </head>
+  <body>
+
+
+
+    <div class="card-group vh-50">
+      <div class="card">
+        <hoity-toity id="js" language="javascript"></hoity-toity>
+      </div>
+      <div class="card">
+        <hoity-toity id="css" language="css"></hoity-toity>
+      </div>
+      <div class="card">
+        <hoity-toity id="html" language="html"></hoity-toity>
+      </div>
+    </div>
+
+    <div class="container-fluid vh-50">
+      <div class="row">
+        <div id="preview" class="col">
+          TODO! write to this container from Codebin.js instance
+        </div>
+      </div>
+      <div class="row">
+        <ul class="nav nav-underline">
+          <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="#">HTML</a>
+          </li>
+          <li class="nav-item">
+            <!-- messages from custom logger nothing fancy -->
+            <!-- maybe this should toggle a 10/2 col split -->
+            <a class="nav-link" href="#">Console</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <script type="module">
+
+      import { Codebin } from 'codebin';
+
+      const codebin = new Codebin({
+        js: document.getElementById('js'),
+        css: document.getElementById('css'),
+        html: document.getElementById('html'),
+        preview: document.getElementById('preview'),
+      });
+
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  </body>
+</html>
