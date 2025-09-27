@@ -1,7 +1,7 @@
 {
   "name": "hoity-toity",
   "description": "Feature Packed Code Editor Web Component",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "main": "hoity-toity.js",
   "scripts": {
