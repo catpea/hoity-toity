@@ -20,7 +20,7 @@
   <body>
     <div class="container-fluid">
       <div class="row">
-        <div class="col" style="min-height: 50vh">
+        <div class="col" style="min-height: 30vh">
           <output-preview id="preview" html="<h1>Hello World</h1>"></output-preview>
         </div>
       </div>
@@ -45,18 +45,81 @@
           </div>
       </div>
     </div>
+
+
+
+<script type="text/plain" id="javascriptData">
+// Your JavaScript here (hit F12 to open up the standard console)
+function greet(name) {
+  const msg = `Hello, ${name}!`;
+  console.log(msg);
+  document.querySelector('h1').innerText = msg;
+}
+greet('World');
+</script>
+
+<script type="text/plain" id="cssData">
+/* Your CSS here */
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 20px;
+}
+
+h1, small {
+  color: orangered;
+}
+</script>
+
+<script type="text/plain" id="htmlData">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <h1>JavaScripts writes here!</h1>
+    <h2>Hello Cats!</h2>
+    <small>this is a live preview of the code below</small>
+</body>
+</html>
+</script>
+
+
+
+
+
+
+
     <script type="module">
       import { Microplugins } from "microplugins";
       import { Codebin } from "codebin";
 
+      const javascriptData = document.getElementById("javascriptData");
+      const cssData = document.getElementById("cssData");
+      const htmlData = document.getElementById("htmlData");
+
+      const js = document.getElementById("js");
+      const css = document.getElementById("css");
+      const html = document.getElementById("html");
+
+      js.setValue(javascriptData.textContent);
+      css.setValue(cssData.textContent);
+      html.setValue(htmlData.innerHTML);
+
       const codebin = new Codebin({
-        js: document.getElementById("js"),
-        css: document.getElementById("css"),
-        html: document.getElementById("html"),
+        js,
+        css,
+        html,
         preview: document.getElementById("preview"),
       });
+
       const microplugins = new Microplugins(); // call microplugins.terminate() when done
+
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+
   </body>
 </html>

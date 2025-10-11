@@ -225,7 +225,7 @@
           for (let i = 0;; i++) {
               let string = this.text[i], end = offset + string.length;
               if ((isLine ? line : end) >= target)
-                  return new Line(offset, end, line, string);
+                  return new Line$1(offset, end, line, string);
               offset = end + 1;
               line++;
           }
@@ -607,7 +607,7 @@
   This type describes a line in the document. It is created
   on-demand when lines are [queried](https://codemirror.net/6/docs/ref/#state.Text.lineAt).
   */
-  class Line {
+  let Line$1 = class Line {
       /**
       @internal
       */
@@ -638,7 +638,7 @@
       The length of the line (not including any line break after it).
       */
       get length() { return this.to - this.from; }
-  }
+  };
   function clip(text, from, to) {
       from = Math.max(0, Math.min(text.length, from));
       return [from, Math.max(from, Math.min(text.length, to))];
@@ -2535,9 +2535,9 @@
       }
       return spec == tr ? tr : Transaction.create(state, tr.changes, tr.selection, spec.effects, spec.annotations, spec.scrollIntoView);
   }
-  const none$2 = [];
+  const none$3 = [];
   function asArray$1(value) {
-      return value == null ? none$2 : Array.isArray(value) ? value : [value];
+      return value == null ? none$3 : Array.isArray(value) ? value : [value];
   }
 
   /**
@@ -17250,7 +17250,7 @@
                   this.inner[i].parse.stopAt(pos);
       }
       startInner() {
-          let fragmentCursor = new FragmentCursor$1(this.fragments);
+          let fragmentCursor = new FragmentCursor$2(this.fragments);
           let overlay = null;
           let covered = null;
           let cursor = new TreeCursor(new TreeNode(this.baseTree, this.ranges[0].from, 0, null), IterMode.IncludeAnonymous | IterMode.IgnoreMounts);
@@ -17421,7 +17421,7 @@
           return false;
       }
   }
-  let FragmentCursor$1 = class FragmentCursor {
+  let FragmentCursor$2 = class FragmentCursor {
       constructor(fragments) {
           var _a;
           this.fragments = fragments;
@@ -19072,6 +19072,103 @@
           this.extension = [language, support];
       }
   }
+  /**
+  Language descriptions are used to store metadata about languages
+  and to dynamically load them. Their main role is finding the
+  appropriate language for a filename or dynamically loading nested
+  parsers.
+  */
+  class LanguageDescription {
+      constructor(
+      /**
+      The name of this language.
+      */
+      name, 
+      /**
+      Alternative names for the mode (lowercased, includes `this.name`).
+      */
+      alias, 
+      /**
+      File extensions associated with this language.
+      */
+      extensions, 
+      /**
+      Optional filename pattern that should be associated with this
+      language.
+      */
+      filename, loadFunc, 
+      /**
+      If the language has been loaded, this will hold its value.
+      */
+      support = undefined) {
+          this.name = name;
+          this.alias = alias;
+          this.extensions = extensions;
+          this.filename = filename;
+          this.loadFunc = loadFunc;
+          this.support = support;
+          this.loading = null;
+      }
+      /**
+      Start loading the the language. Will return a promise that
+      resolves to a [`LanguageSupport`](https://codemirror.net/6/docs/ref/#language.LanguageSupport)
+      object when the language successfully loads.
+      */
+      load() {
+          return this.loading || (this.loading = this.loadFunc().then(support => this.support = support, err => { this.loading = null; throw err; }));
+      }
+      /**
+      Create a language description.
+      */
+      static of(spec) {
+          let { load, support } = spec;
+          if (!load) {
+              if (!support)
+                  throw new RangeError("Must pass either 'load' or 'support' to LanguageDescription.of");
+              load = () => Promise.resolve(support);
+          }
+          return new LanguageDescription(spec.name, (spec.alias || []).concat(spec.name).map(s => s.toLowerCase()), spec.extensions || [], spec.filename, load, support);
+      }
+      /**
+      Look for a language in the given array of descriptions that
+      matches the filename. Will first match
+      [`filename`](https://codemirror.net/6/docs/ref/#language.LanguageDescription.filename) patterns,
+      and then [extensions](https://codemirror.net/6/docs/ref/#language.LanguageDescription.extensions),
+      and return the first language that matches.
+      */
+      static matchFilename(descs, filename) {
+          for (let d of descs)
+              if (d.filename && d.filename.test(filename))
+                  return d;
+          let ext = /\.([^.]+)$/.exec(filename);
+          if (ext)
+              for (let d of descs)
+                  if (d.extensions.indexOf(ext[1]) > -1)
+                      return d;
+          return null;
+      }
+      /**
+      Look for a language whose name or alias matches the the given
+      name (case-insensitively). If `fuzzy` is true, and no direct
+      matchs is found, this'll also search for a language whose name
+      or alias occurs in the string (for names shorter than three
+      characters, only when surrounded by non-word characters).
+      */
+      static matchLanguageName(descs, name, fuzzy = true) {
+          name = name.toLowerCase();
+          for (let d of descs)
+              if (d.alias.some(a => a == name))
+                  return d;
+          if (fuzzy)
+              for (let d of descs)
+                  for (let a of d.alias) {
+                      let found = name.indexOf(a);
+                      if (found > -1 && (a.length > 2 || !/\w/.test(name[found - 1]) && !/\w/.test(name[found + a.length])))
+                          return d;
+                  }
+          return null;
+      }
+  }
 
   /**
   Facet that defines a way to provide a function that computes the
@@ -20592,7 +20689,7 @@
       // transaction needs to be converted to an item. Returns null when
       // there are no changes or effects in the transaction.
       static fromTransaction(tr, selection) {
-          let effects = none$1;
+          let effects = none$2;
           for (let invert of tr.startState.facet(invertedEffects)) {
               let result = invert(tr);
               if (result.length)
@@ -20600,10 +20697,10 @@
           }
           if (!effects.length && tr.changes.empty)
               return null;
-          return new HistEvent(tr.changes.invert(tr.startState.doc), effects, undefined, selection || tr.startState.selection, none$1);
+          return new HistEvent(tr.changes.invert(tr.startState.doc), effects, undefined, selection || tr.startState.selection, none$2);
       }
       static selection(selections) {
-          return new HistEvent(undefined, none$1, undefined, undefined, selections);
+          return new HistEvent(undefined, none$2, undefined, undefined, selections);
       }
   }
   function updateBranch(branch, to, maxLen, newEvent) {
@@ -20631,7 +20728,7 @@
   function conc(a, b) {
       return !a.length ? b : !b.length ? a : a.concat(b);
   }
-  const none$1 = [];
+  const none$2 = [];
   const MaxSelectionsPerEvent = 200;
   function addSelection(branch, selection) {
       if (!branch.length) {
@@ -20659,7 +20756,7 @@
   function addMappingToBranch(branch, mapping) {
       if (!branch.length)
           return branch;
-      let length = branch.length, selections = none$1;
+      let length = branch.length, selections = none$2;
       while (length) {
           let event = mapEvent(branch[length - 1], mapping, selections);
           if (event.changes && !event.changes.empty || event.effects.length) { // Event survived mapping
@@ -20673,10 +20770,10 @@
               selections = event.selectionsAfter;
           }
       }
-      return selections.length ? [HistEvent.selection(selections)] : none$1;
+      return selections.length ? [HistEvent.selection(selections)] : none$2;
   }
   function mapEvent(event, mapping, extraSelections) {
-      let selections = conc(event.selectionsAfter.length ? event.selectionsAfter.map(s => s.map(mapping)) : none$1, extraSelections);
+      let selections = conc(event.selectionsAfter.length ? event.selectionsAfter.map(s => s.map(mapping)) : none$2, extraSelections);
       // Change-less events don't store mappings (they are always the last event in a branch)
       if (!event.changes)
           return HistEvent.selection(selections);
@@ -20704,15 +20801,15 @@
                   config.joinToEvent(tr, isAdjacent(lastEvent.changes, event.changes))) ||
                   // For compose (but not compose.start) events, always join with previous event
                   userEvent == "input.type.compose")) {
-              done = updateBranch(done, done.length - 1, config.minDepth, new HistEvent(event.changes.compose(lastEvent.changes), conc(StateEffect.mapEffects(event.effects, lastEvent.changes), lastEvent.effects), lastEvent.mapped, lastEvent.startSelection, none$1));
+              done = updateBranch(done, done.length - 1, config.minDepth, new HistEvent(event.changes.compose(lastEvent.changes), conc(StateEffect.mapEffects(event.effects, lastEvent.changes), lastEvent.effects), lastEvent.mapped, lastEvent.startSelection, none$2));
           }
           else {
               done = updateBranch(done, done.length, config.minDepth, event);
           }
-          return new HistoryState(done, none$1, time, userEvent);
+          return new HistoryState(done, none$2, time, userEvent);
       }
       addSelection(selection, time, userEvent, newGroupDelay) {
-          let last = this.done.length ? this.done[this.done.length - 1].selectionsAfter : none$1;
+          let last = this.done.length ? this.done[this.done.length - 1].selectionsAfter : none$2;
           if (last.length > 0 &&
               time - this.prevTime < newGroupDelay &&
               userEvent == this.prevUserEvent && userEvent && /^select($|\.)/.test(userEvent) &&
@@ -20740,7 +20837,7 @@
               return null;
           }
           else {
-              let rest = branch.length == 1 ? none$1 : branch.slice(0, branch.length - 1);
+              let rest = branch.length == 1 ? none$2 : branch.slice(0, branch.length - 1);
               if (event.mapped)
                   rest = addMappingToBranch(rest, event.mapped);
               return state.update({
@@ -20755,7 +20852,7 @@
           }
       }
   }
-  HistoryState.empty = /*@__PURE__*/new HistoryState(none$1, none$1);
+  HistoryState.empty = /*@__PURE__*/new HistoryState(none$2, none$2);
   /**
   Default key bindings for the undo history.
 
@@ -21691,6 +21788,13 @@
       { key: "Alt-A", run: toggleBlockComment },
       { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode },
   ].concat(standardKeymap);
+  /**
+  A binding that binds Tab to [`indentMore`](https://codemirror.net/6/docs/ref/#commands.indentMore) and
+  Shift-Tab to [`indentLess`](https://codemirror.net/6/docs/ref/#commands.indentLess).
+  Please see the [Tab example](../../examples/tab/) before using
+  this.
+  */
+  const indentWithTab = { key: "Tab", run: indentMore, shift: indentLess };
 
   const basicNormalize = typeof String.prototype.normalize == "function"
       ? x => x.normalize("NFKD") : x => x;
@@ -23767,7 +23871,7 @@
           this.open = open;
       }
       static start() {
-          return new CompletionState(none, "cm-ac-" + Math.floor(Math.random() * 2e6).toString(36), null);
+          return new CompletionState(none$1, "cm-ac-" + Math.floor(Math.random() * 2e6).toString(36), null);
       }
       update(tr) {
           let { state } = tr, conf = state.facet(completionConfig);
@@ -23827,7 +23931,7 @@
           result["aria-activedescendant"] = id + "-" + selected;
       return result;
   }
-  const none = [];
+  const none$1 = [];
   function getUpdateType(tr, conf) {
       if (tr.isUserEvent("input.complete")) {
           let completion = tr.annotation(pickedCompletion);
@@ -25508,6 +25612,114 @@
       ])
   ])();
 
+  // Using https://github.com/one-dark/vscode-one-dark-theme/ as reference for the colors
+  const chalky = "#e5c07b", coral = "#e06c75", cyan = "#56b6c2", invalid = "#ffffff", ivory = "#abb2bf", stone = "#7d8799", // Brightened compared to original to increase contrast
+  malibu = "#61afef", sage = "#98c379", whiskey = "#d19a66", violet = "#c678dd", darkBackground = "#21252b", highlightBackground = "#2c313a", background = "#282c34", tooltipBackground = "#353a42", selection = "#3E4451", cursor = "#528bff";
+  /**
+  The editor theme styles for One Dark.
+  */
+  const oneDarkTheme = /*@__PURE__*/EditorView.theme({
+      "&": {
+          color: ivory,
+          backgroundColor: background
+      },
+      ".cm-content": {
+          caretColor: cursor
+      },
+      ".cm-cursor, .cm-dropCursor": { borderLeftColor: cursor },
+      "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: selection },
+      ".cm-panels": { backgroundColor: darkBackground, color: ivory },
+      ".cm-panels.cm-panels-top": { borderBottom: "2px solid black" },
+      ".cm-panels.cm-panels-bottom": { borderTop: "2px solid black" },
+      ".cm-searchMatch": {
+          backgroundColor: "#72a1ff59",
+          outline: "1px solid #457dff"
+      },
+      ".cm-searchMatch.cm-searchMatch-selected": {
+          backgroundColor: "#6199ff2f"
+      },
+      ".cm-activeLine": { backgroundColor: "#6699ff0b" },
+      ".cm-selectionMatch": { backgroundColor: "#aafe661a" },
+      "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
+          backgroundColor: "#bad0f847"
+      },
+      ".cm-gutters": {
+          backgroundColor: background,
+          color: stone,
+          border: "none"
+      },
+      ".cm-activeLineGutter": {
+          backgroundColor: highlightBackground
+      },
+      ".cm-foldPlaceholder": {
+          backgroundColor: "transparent",
+          border: "none",
+          color: "#ddd"
+      },
+      ".cm-tooltip": {
+          border: "none",
+          backgroundColor: tooltipBackground
+      },
+      ".cm-tooltip .cm-tooltip-arrow:before": {
+          borderTopColor: "transparent",
+          borderBottomColor: "transparent"
+      },
+      ".cm-tooltip .cm-tooltip-arrow:after": {
+          borderTopColor: tooltipBackground,
+          borderBottomColor: tooltipBackground
+      },
+      ".cm-tooltip-autocomplete": {
+          "& > ul > li[aria-selected]": {
+              backgroundColor: highlightBackground,
+              color: ivory
+          }
+      }
+  }, { dark: true });
+  /**
+  The highlighting style for code in the One Dark theme.
+  */
+  const oneDarkHighlightStyle = /*@__PURE__*/HighlightStyle.define([
+      { tag: tags$1.keyword,
+          color: violet },
+      { tag: [tags$1.name, tags$1.deleted, tags$1.character, tags$1.propertyName, tags$1.macroName],
+          color: coral },
+      { tag: [/*@__PURE__*/tags$1.function(tags$1.variableName), tags$1.labelName],
+          color: malibu },
+      { tag: [tags$1.color, /*@__PURE__*/tags$1.constant(tags$1.name), /*@__PURE__*/tags$1.standard(tags$1.name)],
+          color: whiskey },
+      { tag: [/*@__PURE__*/tags$1.definition(tags$1.name), tags$1.separator],
+          color: ivory },
+      { tag: [tags$1.typeName, tags$1.className, tags$1.number, tags$1.changed, tags$1.annotation, tags$1.modifier, tags$1.self, tags$1.namespace],
+          color: chalky },
+      { tag: [tags$1.operator, tags$1.operatorKeyword, tags$1.url, tags$1.escape, tags$1.regexp, tags$1.link, /*@__PURE__*/tags$1.special(tags$1.string)],
+          color: cyan },
+      { tag: [tags$1.meta, tags$1.comment],
+          color: stone },
+      { tag: tags$1.strong,
+          fontWeight: "bold" },
+      { tag: tags$1.emphasis,
+          fontStyle: "italic" },
+      { tag: tags$1.strikethrough,
+          textDecoration: "line-through" },
+      { tag: tags$1.link,
+          color: stone,
+          textDecoration: "underline" },
+      { tag: tags$1.heading,
+          fontWeight: "bold",
+          color: coral },
+      { tag: [tags$1.atom, tags$1.bool, /*@__PURE__*/tags$1.special(tags$1.variableName)],
+          color: whiskey },
+      { tag: [tags$1.processingInstruction, tags$1.string, tags$1.inserted],
+          color: sage },
+      { tag: tags$1.invalid,
+          color: invalid },
+  ]);
+  /**
+  Extension to enable the One Dark theme (both the editor theme and
+  the highlight style).
+  */
+  const oneDark = [oneDarkTheme, /*@__PURE__*/syntaxHighlighting(oneDarkHighlightStyle)];
+
   /**
   A parse stack. These are used internally by the parser to track
   parsing progress. They also provide some properties and methods
@@ -26562,7 +26774,7 @@
               }
       }
   }
-  class FragmentCursor {
+  let FragmentCursor$1 = class FragmentCursor {
       constructor(fragments, nodeSet) {
           this.fragments = fragments;
           this.nodeSet = nodeSet;
@@ -26645,7 +26857,7 @@
               }
           }
       }
-  }
+  };
   class TokenCache {
       constructor(parser, stream) {
           this.stream = stream;
@@ -26780,7 +26992,7 @@
           let { from } = ranges[0];
           this.stacks = [Stack.start(this, parser.top[0], from)];
           this.fragments = fragments.length && this.stream.end - from > parser.bufferLength * 4
-              ? new FragmentCursor(fragments, parser.nodeSet) : null;
+              ? new FragmentCursor$1(fragments, parser.nodeSet) : null;
       }
       get parsedPos() {
           return this.minStackPos;
@@ -27405,7 +27617,7 @@
   /* Hand-written tokenizers for JavaScript tokens that can't be
      expressed by lezer's built-in tokenizer. */
 
-  const space$1 = [9, 10, 11, 12, 13, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200,
+  const space$2 = [9, 10, 11, 12, 13, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200,
                  8201, 8202, 8232, 8233, 8239, 8287, 12288];
 
   const braceR = 125, semicolon = 59, slash$1 = 47, star = 42, plus = 43, minus = 45, lt = 60, comma = 44,
@@ -27427,7 +27639,7 @@
 
   const noSemicolon = new ExternalTokenizer((input, stack) => {
     let {next} = input, after;
-    if (space$1.indexOf(next) > -1) return
+    if (space$2.indexOf(next) > -1) return
     if (next == slash$1 && ((after = input.peek(1)) == slash$1 || after == star)) return
     if (next != braceR && next != semicolon && next != -1 && !stack.context)
       input.acceptToken(noSemi);
@@ -27465,12 +27677,12 @@
     // Scan for an identifier followed by a comma or 'extends', don't
     // treat this as a start tag if present.
     let back = 0;
-    while (space$1.indexOf(input.next) > -1) { input.advance(); back++; }
+    while (space$2.indexOf(input.next) > -1) { input.advance(); back++; }
     if (identifierChar(input.next, true)) {
       input.advance();
       back++;
       while (identifierChar(input.next, false)) { input.advance(); back++; }
-      while (space$1.indexOf(input.next) > -1) { input.advance(); back++; }
+      while (space$2.indexOf(input.next) > -1) { input.advance(); back++; }
       if (input.next == comma) return
       for (let i = 0;; i++) {
         if (i == 7) {
@@ -27550,7 +27762,7 @@
   const spec_identifier$1 = {__proto__:null,export:20, as:25, from:33, default:36, async:41, function:42, in:52, out:55, const:56, extends:60, this:64, true:72, false:72, null:84, void:88, typeof:92, super:108, new:142, delete:154, yield:163, await:167, class:172, public:235, private:235, protected:235, readonly:237, instanceof:256, satisfies:259, import:292, keyof:349, unique:353, infer:359, asserts:395, is:397, abstract:417, implements:419, type:421, let:424, var:426, using:429, interface:435, enum:439, namespace:445, module:447, declare:451, global:455, defer:471, for:476, of:485, while:488, with:492, do:496, if:500, else:502, switch:506, case:512, try:518, catch:522, finally:526, return:530, throw:534, break:538, continue:542, debugger:546};
   const spec_word = {__proto__:null,async:129, get:131, set:133, declare:195, public:197, private:197, protected:197, static:199, abstract:201, override:203, readonly:209, accessor:211, new:401};
   const spec_LessThan = {__proto__:null,"<":193};
-  const parser$2 = LRParser.deserialize({
+  const parser$5 = LRParser.deserialize({
     version: 14,
     states: "$F|Q%TQlOOO%[QlOOO'_QpOOP(lO`OOO*zQ!0MxO'#CiO+RO#tO'#CjO+aO&jO'#CjO+oO#@ItO'#DaO.QQlO'#DgO.bQlO'#DrO%[QlO'#DzO0fQlO'#ESOOQ!0Lf'#E['#E[O1PQ`O'#EXOOQO'#Ep'#EpOOQO'#Il'#IlO1XQ`O'#GsO1dQ`O'#EoO1iQ`O'#EoO3hQ!0MxO'#JrO6[Q!0MxO'#JsO6uQ`O'#F]O6zQ,UO'#FtOOQ!0Lf'#Ff'#FfO7VO7dO'#FfO9XQMhO'#F|O9`Q`O'#F{OOQ!0Lf'#Js'#JsOOQ!0Lb'#Jr'#JrO9eQ`O'#GwOOQ['#K_'#K_O9pQ`O'#IYO9uQ!0LrO'#IZOOQ['#J`'#J`OOQ['#I_'#I_Q`QlOOQ`QlOOO9}Q!L^O'#DvO:UQlO'#EOO:]QlO'#EQO9kQ`O'#GsO:dQMhO'#CoO:rQ`O'#EnO:}Q`O'#EyO;hQMhO'#FeO;xQ`O'#GsOOQO'#K`'#K`O;}Q`O'#K`O<]Q`O'#G{O<]Q`O'#G|O<]Q`O'#HOO9kQ`O'#HRO=SQ`O'#HUO>kQ`O'#CeO>{Q`O'#HcO?TQ`O'#HiO?TQ`O'#HkO`QlO'#HmO?TQ`O'#HoO?TQ`O'#HrO?YQ`O'#HxO?_Q!0LsO'#IOO%[QlO'#IQO?jQ!0LsO'#ISO?uQ!0LsO'#IUO9uQ!0LrO'#IWO@QQ!0MxO'#CiOASQpO'#DlQOQ`OOO%[QlO'#EQOAjQ`O'#ETO:dQMhO'#EnOAuQ`O'#EnOBQQ!bO'#FeOOQ['#Cg'#CgOOQ!0Lb'#Dq'#DqOOQ!0Lb'#Jv'#JvO%[QlO'#JvOOQO'#Jy'#JyOOQO'#Ih'#IhOCQQpO'#EgOOQ!0Lb'#Ef'#EfOOQ!0Lb'#J}'#J}OC|Q!0MSO'#EgODWQpO'#EWOOQO'#Jx'#JxODlQpO'#JyOEyQpO'#EWODWQpO'#EgPFWO&2DjO'#CbPOOO)CD})CD}OOOO'#I`'#I`OFcO#tO,59UOOQ!0Lh,59U,59UOOOO'#Ia'#IaOFqO&jO,59UOGPQ!L^O'#DcOOOO'#Ic'#IcOGWO#@ItO,59{OOQ!0Lf,59{,59{OGfQlO'#IdOGyQ`O'#JtOIxQ!fO'#JtO+}QlO'#JtOJPQ`O,5:ROJgQ`O'#EpOJtQ`O'#KTOKPQ`O'#KSOKPQ`O'#KSOKXQ`O,5;^OK^Q`O'#KROOQ!0Ln,5:^,5:^OKeQlO,5:^OMcQ!0MxO,5:fONSQ`O,5:nONmQ!0LrO'#KQONtQ`O'#KPO9eQ`O'#KPO! YQ`O'#KPO! bQ`O,5;]O! gQ`O'#KPO!#lQ!fO'#JsOOQ!0Lh'#Ci'#CiO%[QlO'#ESO!$[Q!fO,5:sOOQS'#Jz'#JzOOQO-E<j-E<jO9kQ`O,5=_O!$rQ`O,5=_O!$wQlO,5;ZO!&zQMhO'#EkO!(eQ`O,5;ZO!(jQlO'#DyO!(tQpO,5;dO!(|QpO,5;dO%[QlO,5;dOOQ['#FT'#FTOOQ['#FV'#FVO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eO%[QlO,5;eOOQ['#FZ'#FZO!)[QlO,5;tOOQ!0Lf,5;y,5;yOOQ!0Lf,5;z,5;zOOQ!0Lf,5;|,5;|O%[QlO'#IpO!+_Q!0LrO,5<iO%[QlO,5;eO!&zQMhO,5;eO!+|QMhO,5;eO!-nQMhO'#E^O%[QlO,5;wOOQ!0Lf,5;{,5;{O!-uQ,UO'#FjO!.rQ,UO'#KXO!.^Q,UO'#KXO!.yQ,UO'#KXOOQO'#KX'#KXO!/_Q,UO,5<SOOOW,5<`,5<`O!/pQlO'#FvOOOW'#Io'#IoO7VO7dO,5<QO!/wQ,UO'#FxOOQ!0Lf,5<Q,5<QO!0hQ$IUO'#CyOOQ!0Lh'#C}'#C}O!0{O#@ItO'#DRO!1iQMjO,5<eO!1pQ`O,5<hO!3YQ(CWO'#GXO!3jQ`O'#GYO!3oQ`O'#GYO!5_Q(CWO'#G^O!6dQpO'#GbOOQO'#Gn'#GnO!,TQMhO'#GmOOQO'#Gp'#GpO!,TQMhO'#GoO!7VQ$IUO'#JlOOQ!0Lh'#Jl'#JlO!7aQ`O'#JkO!7oQ`O'#JjO!7wQ`O'#CuOOQ!0Lh'#C{'#C{O!8YQ`O'#C}OOQ!0Lh'#DV'#DVOOQ!0Lh'#DX'#DXO!8_Q`O,5<eO1SQ`O'#DZO!,TQMhO'#GPO!,TQMhO'#GRO!8gQ`O'#GTO!8lQ`O'#GUO!3oQ`O'#G[O!,TQMhO'#GaO<]Q`O'#JkO!8qQ`O'#EqO!9`Q`O,5<gOOQ!0Lb'#Cr'#CrO!9hQ`O'#ErO!:bQpO'#EsOOQ!0Lb'#KR'#KRO!:iQ!0LrO'#KaO9uQ!0LrO,5=cO`QlO,5>tOOQ['#Jh'#JhOOQ[,5>u,5>uOOQ[-E<]-E<]O!<hQ!0MxO,5:bO!:]QpO,5:`O!?RQ!0MxO,5:jO%[QlO,5:jO!AiQ!0MxO,5:lOOQO,5@z,5@zO!BYQMhO,5=_O!BhQ!0LrO'#JiO9`Q`O'#JiO!ByQ!0LrO,59ZO!CUQpO,59ZO!C^QMhO,59ZO:dQMhO,59ZO!CiQ`O,5;ZO!CqQ`O'#HbO!DVQ`O'#KdO%[QlO,5;}O!:]QpO,5<PO!D_Q`O,5=zO!DdQ`O,5=zO!DiQ`O,5=zO!DwQ`O,5=zO9uQ!0LrO,5=zO<]Q`O,5=jOOQO'#Cy'#CyO!EOQpO,5=gO!EWQMhO,5=hO!EcQ`O,5=jO!EhQ!bO,5=mO!EpQ`O'#K`O?YQ`O'#HWO9kQ`O'#HYO!EuQ`O'#HYO:dQMhO'#H[O!EzQ`O'#H[OOQ[,5=p,5=pO!FPQ`O'#H]O!FbQ`O'#CoO!FgQ`O,59PO!FqQ`O,59PO!HvQlO,59POOQ[,59P,59PO!IWQ!0LrO,59PO%[QlO,59PO!KcQlO'#HeOOQ['#Hf'#HfOOQ['#Hg'#HgO`QlO,5=}O!KyQ`O,5=}O`QlO,5>TO`QlO,5>VO!LOQ`O,5>XO`QlO,5>ZO!LTQ`O,5>^O!LYQlO,5>dOOQ[,5>j,5>jO%[QlO,5>jO9uQ!0LrO,5>lOOQ[,5>n,5>nO#!dQ`O,5>nOOQ[,5>p,5>pO#!dQ`O,5>pOOQ[,5>r,5>rO##QQpO'#D_O%[QlO'#JvO##sQpO'#JvO##}QpO'#DmO#$`QpO'#DmO#&qQlO'#DmO#&xQ`O'#JuO#'QQ`O,5:WO#'VQ`O'#EtO#'eQ`O'#KUO#'mQ`O,5;_O#'rQpO'#DmO#(PQpO'#EVOOQ!0Lf,5:o,5:oO%[QlO,5:oO#(WQ`O,5:oO?YQ`O,5;YO!CUQpO,5;YO!C^QMhO,5;YO:dQMhO,5;YO#(`Q`O,5@bO#(eQ07dO,5:sOOQO-E<f-E<fO#)kQ!0MSO,5;RODWQpO,5:rO#)uQpO,5:rODWQpO,5;RO!ByQ!0LrO,5:rOOQ!0Lb'#Ej'#EjOOQO,5;R,5;RO%[QlO,5;RO#*SQ!0LrO,5;RO#*_Q!0LrO,5;RO!CUQpO,5:rOOQO,5;X,5;XO#*mQ!0LrO,5;RPOOO'#I^'#I^P#+RO&2DjO,58|POOO,58|,58|OOOO-E<^-E<^OOQ!0Lh1G.p1G.pOOOO-E<_-E<_OOOO,59},59}O#+^Q!bO,59}OOOO-E<a-E<aOOQ!0Lf1G/g1G/gO#+cQ!fO,5?OO+}QlO,5?OOOQO,5?U,5?UO#+mQlO'#IdOOQO-E<b-E<bO#+zQ`O,5@`O#,SQ!fO,5@`O#,ZQ`O,5@nOOQ!0Lf1G/m1G/mO%[QlO,5@oO#,cQ`O'#IjOOQO-E<h-E<hO#,ZQ`O,5@nOOQ!0Lb1G0x1G0xOOQ!0Ln1G/x1G/xOOQ!0Ln1G0Y1G0YO%[QlO,5@lO#,wQ!0LrO,5@lO#-YQ!0LrO,5@lO#-aQ`O,5@kO9eQ`O,5@kO#-iQ`O,5@kO#-wQ`O'#ImO#-aQ`O,5@kOOQ!0Lb1G0w1G0wO!(tQpO,5:uO!)PQpO,5:uOOQS,5:w,5:wO#.iQdO,5:wO#.qQMhO1G2yO9kQ`O1G2yOOQ!0Lf1G0u1G0uO#/PQ!0MxO1G0uO#0UQ!0MvO,5;VOOQ!0Lh'#GW'#GWO#0rQ!0MzO'#JlO!$wQlO1G0uO#2}Q!fO'#JwO%[QlO'#JwO#3XQ`O,5:eOOQ!0Lh'#D_'#D_OOQ!0Lf1G1O1G1OO%[QlO1G1OOOQ!0Lf1G1f1G1fO#3^Q`O1G1OO#5rQ!0MxO1G1PO#5yQ!0MxO1G1PO#8aQ!0MxO1G1PO#8hQ!0MxO1G1PO#;OQ!0MxO1G1PO#=fQ!0MxO1G1PO#=mQ!0MxO1G1PO#=tQ!0MxO1G1PO#@[Q!0MxO1G1PO#@cQ!0MxO1G1PO#BpQ?MtO'#CiO#DkQ?MtO1G1`O#DrQ?MtO'#JsO#EVQ!0MxO,5?[OOQ!0Lb-E<n-E<nO#GdQ!0MxO1G1PO#HaQ!0MzO1G1POOQ!0Lf1G1P1G1PO#IdQMjO'#J|O#InQ`O,5:xO#IsQ!0MxO1G1cO#JgQ,UO,5<WO#JoQ,UO,5<XO#JwQ,UO'#FoO#K`Q`O'#FnOOQO'#KY'#KYOOQO'#In'#InO#KeQ,UO1G1nOOQ!0Lf1G1n1G1nOOOW1G1y1G1yO#KvQ?MtO'#JrO#LQQ`O,5<bO!)[QlO,5<bOOOW-E<m-E<mOOQ!0Lf1G1l1G1lO#LVQpO'#KXOOQ!0Lf,5<d,5<dO#L_QpO,5<dO#LdQMhO'#DTOOOO'#Ib'#IbO#LkO#@ItO,59mOOQ!0Lh,59m,59mO%[QlO1G2PO!8lQ`O'#IrO#LvQ`O,5<zOOQ!0Lh,5<w,5<wO!,TQMhO'#IuO#MdQMjO,5=XO!,TQMhO'#IwO#NVQMjO,5=ZO!&zQMhO,5=]OOQO1G2S1G2SO#NaQ!dO'#CrO#NtQ(CWO'#ErO$ |QpO'#GbO$!dQ!dO,5<sO$!kQ`O'#K[O9eQ`O'#K[O$!yQ`O,5<uO$#aQ!dO'#C{O!,TQMhO,5<tO$#kQ`O'#GZO$$PQ`O,5<tO$$UQ!dO'#GWO$$cQ!dO'#K]O$$mQ`O'#K]O!&zQMhO'#K]O$$rQ`O,5<xO$$wQlO'#JvO$%RQpO'#GcO#$`QpO'#GcO$%dQ`O'#GgO!3oQ`O'#GkO$%iQ!0LrO'#ItO$%tQpO,5<|OOQ!0Lp,5<|,5<|O$%{QpO'#GcO$&YQpO'#GdO$&kQpO'#GdO$&pQMjO,5=XO$'QQMjO,5=ZOOQ!0Lh,5=^,5=^O!,TQMhO,5@VO!,TQMhO,5@VO$'bQ`O'#IyO$'vQ`O,5@UO$(OQ`O,59aOOQ!0Lh,59i,59iO$(TQ`O,5@VO$)TQ$IYO,59uOOQ!0Lh'#Jp'#JpO$)vQMjO,5<kO$*iQMjO,5<mO@zQ`O,5<oOOQ!0Lh,5<p,5<pO$*sQ`O,5<vO$*xQMjO,5<{O$+YQ`O'#KPO!$wQlO1G2RO$+_Q`O1G2RO9eQ`O'#KSO9eQ`O'#EtO%[QlO'#EtO9eQ`O'#I{O$+dQ!0LrO,5@{OOQ[1G2}1G2}OOQ[1G4`1G4`OOQ!0Lf1G/|1G/|OOQ!0Lf1G/z1G/zO$-fQ!0MxO1G0UOOQ[1G2y1G2yO!&zQMhO1G2yO%[QlO1G2yO#.tQ`O1G2yO$/jQMhO'#EkOOQ!0Lb,5@T,5@TO$/wQ!0LrO,5@TOOQ[1G.u1G.uO!ByQ!0LrO1G.uO!CUQpO1G.uO!C^QMhO1G.uO$0YQ`O1G0uO$0_Q`O'#CiO$0jQ`O'#KeO$0rQ`O,5=|O$0wQ`O'#KeO$0|Q`O'#KeO$1[Q`O'#JRO$1jQ`O,5AOO$1rQ!fO1G1iOOQ!0Lf1G1k1G1kO9kQ`O1G3fO@zQ`O1G3fO$1yQ`O1G3fO$2OQ`O1G3fO!DiQ`O1G3fO9uQ!0LrO1G3fOOQ[1G3f1G3fO!EcQ`O1G3UO!&zQMhO1G3RO$2TQ`O1G3ROOQ[1G3S1G3SO!&zQMhO1G3SO$2YQ`O1G3SO$2bQpO'#HQOOQ[1G3U1G3UO!6_QpO'#I}O!EhQ!bO1G3XOOQ[1G3X1G3XOOQ[,5=r,5=rO$2jQMhO,5=tO9kQ`O,5=tO$%dQ`O,5=vO9`Q`O,5=vO!CUQpO,5=vO!C^QMhO,5=vO:dQMhO,5=vO$2xQ`O'#KcO$3TQ`O,5=wOOQ[1G.k1G.kO$3YQ!0LrO1G.kO@zQ`O1G.kO$3eQ`O1G.kO9uQ!0LrO1G.kO$5mQ!fO,5AQO$5zQ`O,5AQO9eQ`O,5AQO$6VQlO,5>PO$6^Q`O,5>POOQ[1G3i1G3iO`QlO1G3iOOQ[1G3o1G3oOOQ[1G3q1G3qO?TQ`O1G3sO$6cQlO1G3uO$:gQlO'#HtOOQ[1G3x1G3xO$:tQ`O'#HzO?YQ`O'#H|OOQ[1G4O1G4OO$:|QlO1G4OO9uQ!0LrO1G4UOOQ[1G4W1G4WOOQ!0Lb'#G_'#G_O9uQ!0LrO1G4YO9uQ!0LrO1G4[O$?TQ`O,5@bO!)[QlO,5;`O9eQ`O,5;`O?YQ`O,5:XO!)[QlO,5:XO!CUQpO,5:XO$?YQ?MtO,5:XOOQO,5;`,5;`O$?dQpO'#IeO$?zQ`O,5@aOOQ!0Lf1G/r1G/rO$@SQpO'#IkO$@^Q`O,5@pOOQ!0Lb1G0y1G0yO#$`QpO,5:XOOQO'#Ig'#IgO$@fQpO,5:qOOQ!0Ln,5:q,5:qO#(ZQ`O1G0ZOOQ!0Lf1G0Z1G0ZO%[QlO1G0ZOOQ!0Lf1G0t1G0tO?YQ`O1G0tO!CUQpO1G0tO!C^QMhO1G0tOOQ!0Lb1G5|1G5|O!ByQ!0LrO1G0^OOQO1G0m1G0mO%[QlO1G0mO$@mQ!0LrO1G0mO$@xQ!0LrO1G0mO!CUQpO1G0^ODWQpO1G0^O$AWQ!0LrO1G0mOOQO1G0^1G0^O$AlQ!0MxO1G0mPOOO-E<[-E<[POOO1G.h1G.hOOOO1G/i1G/iO$AvQ!bO,5<iO$BOQ!fO1G4jOOQO1G4p1G4pO%[QlO,5?OO$BYQ`O1G5zO$BbQ`O1G6YO$BjQ!fO1G6ZO9eQ`O,5?UO$BtQ!0MxO1G6WO%[QlO1G6WO$CUQ!0LrO1G6WO$CgQ`O1G6VO$CgQ`O1G6VO9eQ`O1G6VO$CoQ`O,5?XO9eQ`O,5?XOOQO,5?X,5?XO$DTQ`O,5?XO$+YQ`O,5?XOOQO-E<k-E<kOOQS1G0a1G0aOOQS1G0c1G0cO#.lQ`O1G0cOOQ[7+(e7+(eO!&zQMhO7+(eO%[QlO7+(eO$DcQ`O7+(eO$DnQMhO7+(eO$D|Q!0MzO,5=XO$GXQ!0MzO,5=ZO$IdQ!0MzO,5=XO$KuQ!0MzO,5=ZO$NWQ!0MzO,59uO%!]Q!0MzO,5<kO%$hQ!0MzO,5<mO%&sQ!0MzO,5<{OOQ!0Lf7+&a7+&aO%)UQ!0MxO7+&aO%)xQlO'#IfO%*VQ`O,5@cO%*_Q!fO,5@cOOQ!0Lf1G0P1G0PO%*iQ`O7+&jOOQ!0Lf7+&j7+&jO%*nQ?MtO,5:fO%[QlO7+&zO%*xQ?MtO,5:bO%+VQ?MtO,5:jO%+aQ?MtO,5:lO%+kQMhO'#IiO%+uQ`O,5@hOOQ!0Lh1G0d1G0dOOQO1G1r1G1rOOQO1G1s1G1sO%+}Q!jO,5<ZO!)[QlO,5<YOOQO-E<l-E<lOOQ!0Lf7+'Y7+'YOOOW7+'e7+'eOOOW1G1|1G1|O%,YQ`O1G1|OOQ!0Lf1G2O1G2OOOOO,59o,59oO%,_Q!dO,59oOOOO-E<`-E<`OOQ!0Lh1G/X1G/XO%,fQ!0MxO7+'kOOQ!0Lh,5?^,5?^O%-YQMhO1G2fP%-aQ`O'#IrPOQ!0Lh-E<p-E<pO%-}QMjO,5?aOOQ!0Lh-E<s-E<sO%.pQMjO,5?cOOQ!0Lh-E<u-E<uO%.zQ!dO1G2wO%/RQ!dO'#CrO%/iQMhO'#KSO$$wQlO'#JvOOQ!0Lh1G2_1G2_O%/sQ`O'#IqO%0[Q`O,5@vO%0[Q`O,5@vO%0dQ`O,5@vO%0oQ`O,5@vOOQO1G2a1G2aO%0}QMjO1G2`O$+YQ`O'#K[O!,TQMhO1G2`O%1_Q(CWO'#IsO%1lQ`O,5@wO!&zQMhO,5@wO%1tQ!dO,5@wOOQ!0Lh1G2d1G2dO%4UQ!fO'#CiO%4`Q`O,5=POOQ!0Lb,5<},5<}O%4hQpO,5<}OOQ!0Lb,5=O,5=OOCwQ`O,5<}O%4sQpO,5<}OOQ!0Lb,5=R,5=RO$+YQ`O,5=VOOQO,5?`,5?`OOQO-E<r-E<rOOQ!0Lp1G2h1G2hO#$`QpO,5<}O$$wQlO,5=PO%5RQ`O,5=OO%5^QpO,5=OO!,TQMhO'#IuO%6WQMjO1G2sO!,TQMhO'#IwO%6yQMjO1G2uO%7TQMjO1G5qO%7_QMjO1G5qOOQO,5?e,5?eOOQO-E<w-E<wOOQO1G.{1G.{O!,TQMhO1G5qO!,TQMhO1G5qO!:]QpO,59wO%[QlO,59wOOQ!0Lh,5<j,5<jO%7lQ`O1G2ZO!,TQMhO1G2bO%7qQ!0MxO7+'mOOQ!0Lf7+'m7+'mO!$wQlO7+'mO%8eQ`O,5;`OOQ!0Lb,5?g,5?gOOQ!0Lb-E<y-E<yO%8jQ!dO'#K^O#(ZQ`O7+(eO4UQ!fO7+(eO$DfQ`O7+(eO%8tQ!0MvO'#CiO%9XQ!0MvO,5=SO%9lQ`O,5=SO%9tQ`O,5=SOOQ!0Lb1G5o1G5oOOQ[7+$a7+$aO!ByQ!0LrO7+$aO!CUQpO7+$aO!$wQlO7+&aO%9yQ`O'#JQO%:bQ`O,5APOOQO1G3h1G3hO9kQ`O,5APO%:bQ`O,5APO%:jQ`O,5APOOQO,5?m,5?mOOQO-E=P-E=POOQ!0Lf7+'T7+'TO%:oQ`O7+)QO9uQ!0LrO7+)QO9kQ`O7+)QO@zQ`O7+)QO%:tQ`O7+)QOOQ[7+)Q7+)QOOQ[7+(p7+(pO%:yQ!0MvO7+(mO!&zQMhO7+(mO!E^Q`O7+(nOOQ[7+(n7+(nO!&zQMhO7+(nO%;TQ`O'#KbO%;`Q`O,5=lOOQO,5?i,5?iOOQO-E<{-E<{OOQ[7+(s7+(sO%<rQpO'#HZOOQ[1G3`1G3`O!&zQMhO1G3`O%[QlO1G3`O%<yQ`O1G3`O%=UQMhO1G3`O9uQ!0LrO1G3bO$%dQ`O1G3bO9`Q`O1G3bO!CUQpO1G3bO!C^QMhO1G3bO%=dQ`O'#JPO%=xQ`O,5@}O%>QQpO,5@}OOQ!0Lb1G3c1G3cOOQ[7+$V7+$VO@zQ`O7+$VO9uQ!0LrO7+$VO%>]Q`O7+$VO%[QlO1G6lO%[QlO1G6mO%>bQ!0LrO1G6lO%>lQlO1G3kO%>sQ`O1G3kO%>xQlO1G3kOOQ[7+)T7+)TO9uQ!0LrO7+)_O`QlO7+)aOOQ['#Kh'#KhOOQ['#JS'#JSO%?PQlO,5>`OOQ[,5>`,5>`O%[QlO'#HuO%?^Q`O'#HwOOQ[,5>f,5>fO9eQ`O,5>fOOQ[,5>h,5>hOOQ[7+)j7+)jOOQ[7+)p7+)pOOQ[7+)t7+)tOOQ[7+)v7+)vO%?cQpO1G5|O%?}Q?MtO1G0zO%@XQ`O1G0zOOQO1G/s1G/sO%@dQ?MtO1G/sO?YQ`O1G/sO!)[QlO'#DmOOQO,5?P,5?POOQO-E<c-E<cOOQO,5?V,5?VOOQO-E<i-E<iO!CUQpO1G/sOOQO-E<e-E<eOOQ!0Ln1G0]1G0]OOQ!0Lf7+%u7+%uO#(ZQ`O7+%uOOQ!0Lf7+&`7+&`O?YQ`O7+&`O!CUQpO7+&`OOQO7+%x7+%xO$AlQ!0MxO7+&XOOQO7+&X7+&XO%[QlO7+&XO%@nQ!0LrO7+&XO!ByQ!0LrO7+%xO!CUQpO7+%xO%@yQ!0LrO7+&XO%AXQ!0MxO7++rO%[QlO7++rO%AiQ`O7++qO%AiQ`O7++qOOQO1G4s1G4sO9eQ`O1G4sO%AqQ`O1G4sOOQS7+%}7+%}O#(ZQ`O<<LPO4UQ!fO<<LPO%BPQ`O<<LPOOQ[<<LP<<LPO!&zQMhO<<LPO%[QlO<<LPO%BXQ`O<<LPO%BdQ!0MzO,5?aO%DoQ!0MzO,5?cO%FzQ!0MzO1G2`O%I]Q!0MzO1G2sO%KhQ!0MzO1G2uO%MsQ!fO,5?QO%[QlO,5?QOOQO-E<d-E<dO%M}Q`O1G5}OOQ!0Lf<<JU<<JUO%NVQ?MtO1G0uO&!^Q?MtO1G1PO&!eQ?MtO1G1PO&$fQ?MtO1G1PO&$mQ?MtO1G1PO&&nQ?MtO1G1PO&(oQ?MtO1G1PO&(vQ?MtO1G1PO&(}Q?MtO1G1PO&+OQ?MtO1G1PO&+VQ?MtO1G1PO&+^Q!0MxO<<JfO&-UQ?MtO1G1PO&.RQ?MvO1G1PO&/UQ?MvO'#JlO&1[Q?MtO1G1cO&1iQ?MtO1G0UO&1sQMjO,5?TOOQO-E<g-E<gO!)[QlO'#FqOOQO'#KZ'#KZOOQO1G1u1G1uO&1}Q`O1G1tO&2SQ?MtO,5?[OOOW7+'h7+'hOOOO1G/Z1G/ZO&2^Q!dO1G4xOOQ!0Lh7+(Q7+(QP!&zQMhO,5?^O!,TQMhO7+(cO&2eQ`O,5?]O9eQ`O,5?]O$+YQ`O,5?]OOQO-E<o-E<oO&2sQ`O1G6bO&2sQ`O1G6bO&2{Q`O1G6bO&3WQMjO7+'zO&3hQ!dO,5?_O&3rQ`O,5?_O!&zQMhO,5?_OOQO-E<q-E<qO&3wQ!dO1G6cO&4RQ`O1G6cO&4ZQ`O1G2kO!&zQMhO1G2kOOQ!0Lb1G2i1G2iOOQ!0Lb1G2j1G2jO%4hQpO1G2iO!CUQpO1G2iOCwQ`O1G2iOOQ!0Lb1G2q1G2qO&4`QpO1G2iO&4nQ`O1G2kO$+YQ`O1G2jOCwQ`O1G2jO$$wQlO1G2kO&4vQ`O1G2jO&5jQMjO,5?aOOQ!0Lh-E<t-E<tO&6]QMjO,5?cOOQ!0Lh-E<v-E<vO!,TQMhO7++]O&6gQMjO7++]O&6qQMjO7++]OOQ!0Lh1G/c1G/cO&7OQ`O1G/cOOQ!0Lh7+'u7+'uO&7TQMjO7+'|O&7eQ!0MxO<<KXOOQ!0Lf<<KX<<KXO&8XQ`O1G0zO!&zQMhO'#IzO&8^Q`O,5@xO&:`Q!fO<<LPO!&zQMhO1G2nO&:gQ!0LrO1G2nOOQ[<<G{<<G{O!ByQ!0LrO<<G{O&:xQ!0MxO<<I{OOQ!0Lf<<I{<<I{OOQO,5?l,5?lO&;lQ`O,5?lO&;qQ`O,5?lOOQO-E=O-E=OO&<PQ`O1G6kO&<PQ`O1G6kO9kQ`O1G6kO@zQ`O<<LlOOQ[<<Ll<<LlO&<XQ`O<<LlO9uQ!0LrO<<LlO9kQ`O<<LlOOQ[<<LX<<LXO%:yQ!0MvO<<LXOOQ[<<LY<<LYO!E^Q`O<<LYO&<^QpO'#I|O&<iQ`O,5@|O!)[QlO,5@|OOQ[1G3W1G3WOOQO'#JO'#JOO9uQ!0LrO'#JOO&<qQpO,5=uOOQ[,5=u,5=uO&<xQpO'#EgO&=PQpO'#GeO&=UQ`O7+(zO&=ZQ`O7+(zOOQ[7+(z7+(zO!&zQMhO7+(zO%[QlO7+(zO&=cQ`O7+(zOOQ[7+(|7+(|O9uQ!0LrO7+(|O$%dQ`O7+(|O9`Q`O7+(|O!CUQpO7+(|O&=nQ`O,5?kOOQO-E<}-E<}OOQO'#H^'#H^O&=yQ`O1G6iO9uQ!0LrO<<GqOOQ[<<Gq<<GqO@zQ`O<<GqO&>RQ`O7+,WO&>WQ`O7+,XO%[QlO7+,WO%[QlO7+,XOOQ[7+)V7+)VO&>]Q`O7+)VO&>bQlO7+)VO&>iQ`O7+)VOOQ[<<Ly<<LyOOQ[<<L{<<L{OOQ[-E=Q-E=QOOQ[1G3z1G3zO&>nQ`O,5>aOOQ[,5>c,5>cO&>sQ`O1G4QO9eQ`O7+&fO!)[QlO7+&fOOQO7+%_7+%_O&>xQ?MtO1G6ZO?YQ`O7+%_OOQ!0Lf<<Ia<<IaOOQ!0Lf<<Iz<<IzO?YQ`O<<IzOOQO<<Is<<IsO$AlQ!0MxO<<IsO%[QlO<<IsOOQO<<Id<<IdO!ByQ!0LrO<<IdO&?SQ!0LrO<<IsO&?_Q!0MxO<= ^O&?oQ`O<= ]OOQO7+*_7+*_O9eQ`O7+*_OOQ[ANAkANAkO&?wQ!fOANAkO!&zQMhOANAkO#(ZQ`OANAkO4UQ!fOANAkO&@OQ`OANAkO%[QlOANAkO&@WQ!0MzO7+'zO&BiQ!0MzO,5?aO&DtQ!0MzO,5?cO&GPQ!0MzO7+'|O&IbQ!fO1G4lO&IlQ?MtO7+&aO&KpQ?MvO,5=XO&MwQ?MvO,5=ZO&NXQ?MvO,5=XO&NiQ?MvO,5=ZO&NyQ?MvO,59uO'#PQ?MvO,5<kO'%SQ?MvO,5<mO''hQ?MvO,5<{O')^Q?MtO7+'kO')kQ?MtO7+'mO')xQ`O,5<]OOQO7+'`7+'`OOQ!0Lh7+*d7+*dO')}QMjO<<K}OOQO1G4w1G4wO'*UQ`O1G4wO'*aQ`O1G4wO'*oQ`O7++|O'*oQ`O7++|O!&zQMhO1G4yO'*wQ!dO1G4yO'+RQ`O7++}O'+ZQ`O7+(VO'+fQ!dO7+(VOOQ!0Lb7+(T7+(TOOQ!0Lb7+(U7+(UO!CUQpO7+(TOCwQ`O7+(TO'+pQ`O7+(VO!&zQMhO7+(VO$+YQ`O7+(UO'+uQ`O7+(VOCwQ`O7+(UO'+}QMjO<<NwO!,TQMhO<<NwOOQ!0Lh7+$}7+$}O',XQ!dO,5?fOOQO-E<x-E<xO',cQ!0MvO7+(YO!&zQMhO7+(YOOQ[AN=gAN=gO9kQ`O1G5WOOQO1G5W1G5WO',sQ`O1G5WO',xQ`O7+,VO',xQ`O7+,VO9uQ!0LrOANBWO@zQ`OANBWOOQ[ANBWANBWO'-QQ`OANBWOOQ[ANAsANAsOOQ[ANAtANAtO'-VQ`O,5?hOOQO-E<z-E<zO'-bQ?MtO1G6hOOQO,5?j,5?jOOQO-E<|-E<|OOQ[1G3a1G3aO'-lQ`O,5=POOQ[<<Lf<<LfO!&zQMhO<<LfO&=UQ`O<<LfO'-qQ`O<<LfO%[QlO<<LfOOQ[<<Lh<<LhO9uQ!0LrO<<LhO$%dQ`O<<LhO9`Q`O<<LhO'-yQpO1G5VO'.UQ`O7+,TOOQ[AN=]AN=]O9uQ!0LrOAN=]OOQ[<= r<= rOOQ[<= s<= sO'.^Q`O<= rO'.cQ`O<= sOOQ[<<Lq<<LqO'.hQ`O<<LqO'.mQlO<<LqOOQ[1G3{1G3{O?YQ`O7+)lO'.tQ`O<<JQO'/PQ?MtO<<JQOOQO<<Hy<<HyOOQ!0LfAN?fAN?fOOQOAN?_AN?_O$AlQ!0MxOAN?_OOQOAN?OAN?OO%[QlOAN?_OOQO<<My<<MyOOQ[G27VG27VO!&zQMhOG27VO#(ZQ`OG27VO'/ZQ!fOG27VO4UQ!fOG27VO'/bQ`OG27VO'/jQ?MtO<<JfO'/wQ?MvO1G2`O'1mQ?MvO,5?aO'3pQ?MvO,5?cO'5sQ?MvO1G2sO'7vQ?MvO1G2uO'9yQ?MtO<<KXO':WQ?MtO<<I{OOQO1G1w1G1wO!,TQMhOANAiOOQO7+*c7+*cO':eQ`O7+*cO':pQ`O<= hO':xQ!dO7+*eOOQ!0Lb<<Kq<<KqO$+YQ`O<<KqOCwQ`O<<KqO';SQ`O<<KqO!&zQMhO<<KqOOQ!0Lb<<Ko<<KoO!CUQpO<<KoO';_Q!dO<<KqOOQ!0Lb<<Kp<<KpO';iQ`O<<KqO!&zQMhO<<KqO$+YQ`O<<KpO';nQMjOANDcO';xQ!0MvO<<KtOOQO7+*r7+*rO9kQ`O7+*rO'<YQ`O<= qOOQ[G27rG27rO9uQ!0LrOG27rO@zQ`OG27rO!)[QlO1G5SO'<bQ`O7+,SO'<jQ`O1G2kO&=UQ`OANBQOOQ[ANBQANBQO!&zQMhOANBQO'<oQ`OANBQOOQ[ANBSANBSO9uQ!0LrOANBSO$%dQ`OANBSOOQO'#H_'#H_OOQO7+*q7+*qOOQ[G22wG22wOOQ[ANE^ANE^OOQ[ANE_ANE_OOQ[ANB]ANB]O'<wQ`OANB]OOQ[<<MW<<MWO!)[QlOAN?lOOQOG24yG24yO$AlQ!0MxOG24yO#(ZQ`OLD,qOOQ[LD,qLD,qO!&zQMhOLD,qO'<|Q!fOLD,qO'=TQ?MvO7+'zO'>yQ?MvO,5?aO'@|Q?MvO,5?cO'CPQ?MvO7+'|O'DuQMjOG27TOOQO<<M}<<M}OOQ!0LbANA]ANA]O$+YQ`OANA]OCwQ`OANA]O'EVQ!dOANA]OOQ!0LbANAZANAZO'E^Q`OANA]O!&zQMhOANA]O'EiQ!dOANA]OOQ!0LbANA[ANA[OOQO<<N^<<N^OOQ[LD-^LD-^O9uQ!0LrOLD-^O'EsQ?MtO7+*nOOQO'#Gf'#GfOOQ[G27lG27lO&=UQ`OG27lO!&zQMhOG27lOOQ[G27nG27nO9uQ!0LrOG27nOOQ[G27wG27wO'E}Q?MtOG25WOOQOLD*eLD*eOOQ[!$(!]!$(!]O#(ZQ`O!$(!]O!&zQMhO!$(!]O'FXQ!0MzOG27TOOQ!0LbG26wG26wO$+YQ`OG26wO'HjQ`OG26wOCwQ`OG26wO'HuQ!dOG26wO!&zQMhOG26wOOQ[!$(!x!$(!xOOQ[LD-WLD-WO&=UQ`OLD-WOOQ[LD-YLD-YOOQ[!)9Ew!)9EwO#(ZQ`O!)9EwOOQ!0LbLD,cLD,cO$+YQ`OLD,cOCwQ`OLD,cO'H|Q`OLD,cO'IXQ!dOLD,cOOQ[!$(!r!$(!rOOQ[!.K;c!.K;cO'I`Q?MvOG27TOOQ!0Lb!$( }!$( }O$+YQ`O!$( }OCwQ`O!$( }O'KUQ`O!$( }OOQ!0Lb!)9Ei!)9EiO$+YQ`O!)9EiOCwQ`O!)9EiOOQ!0Lb!.K;T!.K;TO$+YQ`O!.K;TOOQ!0Lb!4/0o!4/0oO!)[QlO'#DzO1PQ`O'#EXO'KaQ!fO'#JrO'KhQ!L^O'#DvO'KoQlO'#EOO'KvQ!fO'#CiO'N^Q!fO'#CiO!)[QlO'#EQO'NnQlO,5;ZO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO,5;eO!)[QlO'#IpO(!qQ`O,5<iO!)[QlO,5;eO(!yQMhO,5;eO($dQMhO,5;eO!)[QlO,5;wO!&zQMhO'#GmO(!yQMhO'#GmO!&zQMhO'#GoO(!yQMhO'#GoO1SQ`O'#DZO1SQ`O'#DZO!&zQMhO'#GPO(!yQMhO'#GPO!&zQMhO'#GRO(!yQMhO'#GRO!&zQMhO'#GaO(!yQMhO'#GaO!)[QlO,5:jO($kQpO'#D_O($uQpO'#JvO!)[QlO,5@oO'NnQlO1G0uO(%PQ?MtO'#CiO!)[QlO1G2PO!&zQMhO'#IuO(!yQMhO'#IuO!&zQMhO'#IwO(!yQMhO'#IwO(%ZQ!dO'#CrO!&zQMhO,5<tO(!yQMhO,5<tO'NnQlO1G2RO!)[QlO7+&zO!&zQMhO1G2`O(!yQMhO1G2`O!&zQMhO'#IuO(!yQMhO'#IuO!&zQMhO'#IwO(!yQMhO'#IwO!&zQMhO1G2bO(!yQMhO1G2bO'NnQlO7+'mO'NnQlO7+&aO!&zQMhOANAiO(!yQMhOANAiO(%nQ`O'#EoO(%sQ`O'#EoO(%{Q`O'#F]O(&QQ`O'#EyO(&VQ`O'#KTO(&bQ`O'#KRO(&mQ`O,5;ZO(&rQMjO,5<eO(&yQ`O'#GYO('OQ`O'#GYO('TQ`O,5<eO(']Q`O,5<gO('eQ`O,5;ZO('mQ?MtO1G1`O('tQ`O,5<tO('yQ`O,5<tO((OQ`O,5<vO((TQ`O,5<vO((YQ`O1G2RO((_Q`O1G0uO((dQMjO<<K}O((kQMjO<<K}O((rQMhO'#F|O9`Q`O'#F{OAuQ`O'#EnO!)[QlO,5;tO!3oQ`O'#GYO!3oQ`O'#GYO!3oQ`O'#G[O!3oQ`O'#G[O!,TQMhO7+(cO!,TQMhO7+(cO%.zQ!dO1G2wO%.zQ!dO1G2wO!&zQMhO,5=]O!&zQMhO,5=]",
     stateData: "()x~O'|OS'}OSTOS(ORQ~OPYOQYOSfOY!VOaqOdzOeyOl!POpkOrYOskOtkOzkO|YO!OYO!SWO!WkO!XkO!_XO!iuO!lZO!oYO!pYO!qYO!svO!uwO!xxO!|]O$W|O$niO%h}O%j!QO%l!OO%m!OO%n!OO%q!RO%s!SO%v!TO%w!TO%y!UO&W!WO&^!XO&`!YO&b!ZO&d![O&g!]O&m!^O&s!_O&u!`O&w!aO&y!bO&{!cO(TSO(VTO(YUO(aVO(o[O~OWtO~P`OPYOQYOSfOd!jOe!iOpkOrYOskOtkOzkO|YO!OYO!SWO!WkO!XkO!_!eO!iuO!lZO!oYO!pYO!qYO!svO!u!gO!x!hO$W!kO$niO(T!dO(VTO(YUO(aVO(o[O~Oa!wOs!nO!S!oO!b!yO!c!vO!d!vO!|<VO#T!pO#U!pO#V!xO#W!pO#X!pO#[!zO#]!zO(U!lO(VTO(YUO(e!mO(o!sO~O(O!{O~OP]XR]X[]Xa]Xj]Xr]X!Q]X!S]X!]]X!l]X!p]X#R]X#S]X#`]X#kfX#n]X#o]X#p]X#q]X#r]X#s]X#t]X#u]X#v]X#x]X#z]X#{]X$Q]X'z]X(a]X(r]X(y]X(z]X~O!g%RX~P(qO_!}O(V#PO(W!}O(X#PO~O_#QO(X#PO(Y#PO(Z#QO~Ox#SO!U#TO(b#TO(c#VO~OPYOQYOSfOd!jOe!iOpkOrYOskOtkOzkO|YO!OYO!SWO!WkO!XkO!_!eO!iuO!lZO!oYO!pYO!qYO!svO!u!gO!x!hO$W!kO$niO(T<ZO(VTO(YUO(aVO(o[O~O![#ZO!]#WO!Y(hP!Y(vP~P+}O!^#cO~P`OPYOQYOSfOd!jOe!iOrYOskOtkOzkO|YO!OYO!SWO!WkO!XkO!_!eO!iuO!lZO!oYO!pYO!qYO!svO!u!gO!x!hO$W!kO$niO(VTO(YUO(aVO(o[O~Op#mO![#iO!|]O#i#lO#j#iO(T<[O!k(sP~P.iO!l#oO(T#nO~O!x#sO!|]O%h#tO~O#k#uO~O!g#vO#k#uO~OP$[OR#zO[$cOj$ROr$aO!Q#yO!S#{O!]$_O!l#xO!p$[O#R$RO#n$OO#o$PO#p$PO#q$PO#r$QO#s$RO#t$RO#u$bO#v$SO#x$UO#z$WO#{$XO(aVO(r$YO(y#|O(z#}O~Oa(fX'z(fX'w(fX!k(fX!Y(fX!_(fX%i(fX!g(fX~P1qO#S$dO#`$eO$Q$eOP(gXR(gX[(gXj(gXr(gX!Q(gX!S(gX!](gX!l(gX!p(gX#R(gX#n(gX#o(gX#p(gX#q(gX#r(gX#s(gX#t(gX#u(gX#v(gX#x(gX#z(gX#{(gX(a(gX(r(gX(y(gX(z(gX!_(gX%i(gX~Oa(gX'z(gX'w(gX!Y(gX!k(gXv(gX!g(gX~P4UO#`$eO~O$]$hO$_$gO$f$mO~OSfO!_$nO$i$oO$k$qO~Oh%VOj%dOk%dOp%WOr%XOs$tOt$tOz%YO|%ZO!O%]O!S${O!_$|O!i%bO!l$xO#j%cO$W%`O$t%^O$v%_O$y%aO(T$sO(VTO(YUO(a$uO(y$}O(z%POg(^P~Ol%[O~P7eO!l%eO~O!S%hO!_%iO(T%gO~O!g%mO~Oa%nO'z%nO~O!Q%rO~P%[O(U!lO~P%[O%n%vO~P%[Oh%VO!l%eO(T%gO(U!lO~Oe%}O!l%eO(T%gO~Oj$RO~O!_&PO(T%gO(U!lO(VTO(YUO`)WP~O!Q&SO!l&RO%j&VO&T&WO~P;SO!x#sO~O%s&YO!S)SX!_)SX(T)SX~O(T&ZO~Ol!PO!u&`O%j!QO%l!OO%m!OO%n!OO%q!RO%s!SO%v!TO%w!TO~Od&eOe&dO!x&bO%h&cO%{&aO~P<bOd&hOeyOl!PO!_&gO!u&`O!xxO!|]O%h}O%l!OO%m!OO%n!OO%q!RO%s!SO%v!TO%w!TO%y!UO~Ob&kO#`&nO%j&iO(U!lO~P=gO!l&oO!u&sO~O!l#oO~O!_XO~Oa%nO'x&{O'z%nO~Oa%nO'x'OO'z%nO~Oa%nO'x'QO'z%nO~O'w]X!Y]Xv]X!k]X&[]X!_]X%i]X!g]X~P(qO!b'_O!c'WO!d'WO(U!lO(VTO(YUO~Os'UO!S'TO!['XO(e'SO!^(iP!^(xP~P@nOn'bO!_'`O(T%gO~Oe'gO!l%eO(T%gO~O!Q&SO!l&RO~Os!nO!S!oO!|<VO#T!pO#U!pO#W!pO#X!pO(U!lO(VTO(YUO(e!mO(o!sO~O!b'mO!c'lO!d'lO#V!pO#['nO#]'nO~PBYOa%nOh%VO!g#vO!l%eO'z%nO(r'pO~O!p'tO#`'rO~PChOs!nO!S!oO(VTO(YUO(e!mO(o!sO~O!_XOs(mX!S(mX!b(mX!c(mX!d(mX!|(mX#T(mX#U(mX#V(mX#W(mX#X(mX#[(mX#](mX(U(mX(V(mX(Y(mX(e(mX(o(mX~O!c'lO!d'lO(U!lO~PDWO(P'xO(Q'xO(R'zO~O_!}O(V'|O(W!}O(X'|O~O_#QO(X'|O(Y'|O(Z#QO~Ov(OO~P%[Ox#SO!U#TO(b#TO(c(RO~O![(TO!Y'WX!Y'^X!]'WX!]'^X~P+}O!](VO!Y(hX~OP$[OR#zO[$cOj$ROr$aO!Q#yO!S#{O!](VO!l#xO!p$[O#R$RO#n$OO#o$PO#p$PO#q$PO#r$QO#s$RO#t$RO#u$bO#v$SO#x$UO#z$WO#{$XO(aVO(r$YO(y#|O(z#}O~O!Y(hX~PHRO!Y([O~O!Y(uX!](uX!g(uX!k(uX(r(uX~O#`(uX#k#dX!^(uX~PJUO#`(]O!Y(wX!](wX~O!](^O!Y(vX~O!Y(aO~O#`$eO~PJUO!^(bO~P`OR#zO!Q#yO!S#{O!l#xO(aVOP!na[!naj!nar!na!]!na!p!na#R!na#n!na#o!na#p!na#q!na#r!na#s!na#t!na#u!na#v!na#x!na#z!na#{!na(r!na(y!na(z!na~Oa!na'z!na'w!na!Y!na!k!nav!na!_!na%i!na!g!na~PKlO!k(cO~O!g#vO#`(dO(r'pO!](tXa(tX'z(tX~O!k(tX~PNXO!S%hO!_%iO!|]O#i(iO#j(hO(T%gO~O!](jO!k(sX~O!k(lO~O!S%hO!_%iO#j(hO(T%gO~OP(gXR(gX[(gXj(gXr(gX!Q(gX!S(gX!](gX!l(gX!p(gX#R(gX#n(gX#o(gX#p(gX#q(gX#r(gX#s(gX#t(gX#u(gX#v(gX#x(gX#z(gX#{(gX(a(gX(r(gX(y(gX(z(gX~O!g#vO!k(gX~P! uOR(nO!Q(mO!l#xO#S$dO!|!{a!S!{a~O!x!{a%h!{a!_!{a#i!{a#j!{a(T!{a~P!#vO!x(rO~OPYOQYOSfOd!jOe!iOpkOrYOskOtkOzkO|YO!OYO!SWO!WkO!XkO!_XO!iuO!lZO!oYO!pYO!qYO!svO!u!gO!x!hO$W!kO$niO(T!dO(VTO(YUO(aVO(o[O~Oh%VOp%WOr%XOs$tOt$tOz%YO|%ZO!O<sO!S${O!_$|O!i>VO!l$xO#j<yO$W%`O$t<uO$v<wO$y%aO(T(vO(VTO(YUO(a$uO(y$}O(z%PO~O#k(xO~O![(zO!k(kP~P%[O(e(|O(o[O~O!S)OO!l#xO(e(|O(o[O~OP<UOQ<UOSfOd>ROe!iOpkOr<UOskOtkOzkO|<UO!O<UO!SWO!WkO!XkO!_!eO!i<XO!lZO!o<UO!p<UO!q<UO!s<YO!u<]O!x!hO$W!kO$n>PO(T)]O(VTO(YUO(aVO(o[O~O!]$_Oa$qa'z$qa'w$qa!k$qa!Y$qa!_$qa%i$qa!g$qa~Ol)dO~P!&zOh%VOp%WOr%XOs$tOt$tOz%YO|%ZO!O%]O!S${O!_$|O!i%bO!l$xO#j%cO$W%`O$t%^O$v%_O$y%aO(T(vO(VTO(YUO(a$uO(y$}O(z%PO~Og(pP~P!,TO!Q)iO!g)hO!_$^X$Z$^X$]$^X$_$^X$f$^X~O!g)hO!_({X$Z({X$]({X$_({X$f({X~O!Q)iO~P!.^O!Q)iO!_({X$Z({X$]({X$_({X$f({X~O!_)kO$Z)oO$])jO$_)jO$f)pO~O![)sO~P!)[O$]$hO$_$gO$f)wO~On$zX!Q$zX#S$zX'y$zX(y$zX(z$zX~OgmXg$zXnmX!]mX#`mX~P!0SOx)yO(b)zO(c)|O~On*VO!Q*OO'y*PO(y$}O(z%PO~Og)}O~P!1WOg*WO~Oh%VOr%XOs$tOt$tOz%YO|%ZO!O<sO!S*YO!_*ZO!i>VO!l$xO#j<yO$W%`O$t<uO$v<wO$y%aO(VTO(YUO(a$uO(y$}O(z%PO~Op*`O![*^O(T*XO!k)OP~P!1uO#k*aO~O!l*bO~Oh%VOp%WOr%XOs$tOt$tOz%YO|%ZO!O<sO!S${O!_$|O!i>VO!l$xO#j<yO$W%`O$t<uO$v<wO$y%aO(T*dO(VTO(YUO(a$uO(y$}O(z%PO~O![*gO!Y)PP~P!3tOr*sOs!nO!S*iO!b*qO!c*kO!d*kO!l*bO#[*rO%`*mO(U!lO(VTO(YUO(e!mO~O!^*pO~P!5iO#S$dOn(`X!Q(`X'y(`X(y(`X(z(`X!](`X#`(`X~Og(`X$O(`X~P!6kOn*xO#`*wOg(_X!](_X~O!]*yOg(^X~Oj%dOk%dOl%dO(T&ZOg(^P~Os*|O~Og)}O(T&ZO~O!l+SO~O(T(vO~Op+WO!S%hO![#iO!_%iO!|]O#i#lO#j#iO(T%gO!k(sP~O!g#vO#k+XO~O!S%hO![+ZO!](^O!_%iO(T%gO!Y(vP~Os'[O!S+]O![+[O(VTO(YUO(e(|O~O!^(xP~P!9|O!]+^Oa)TX'z)TX~OP$[OR#zO[$cOj$ROr$aO!Q#yO!S#{O!l#xO!p$[O#R$RO#n$OO#o$PO#p$PO#q$PO#r$QO#s$RO#t$RO#u$bO#v$SO#x$UO#z$WO#{$XO(aVO(r$YO(y#|O(z#}O~Oa!ja!]!ja'z!ja'w!ja!Y!ja!k!jav!ja!_!ja%i!ja!g!ja~P!:tOR#zO!Q#yO!S#{O!l#xO(aVOP!ra[!raj!rar!ra!]!ra!p!ra#R!ra#n!ra#o!ra#p!ra#q!ra#r!ra#s!ra#t!ra#u!ra#v!ra#x!ra#z!ra#{!ra(r!ra(y!ra(z!ra~Oa!ra'z!ra'w!ra!Y!ra!k!rav!ra!_!ra%i!ra!g!ra~P!=[OR#zO!Q#yO!S#{O!l#xO(aVOP!ta[!taj!tar!ta!]!ta!p!ta#R!ta#n!ta#o!ta#p!ta#q!ta#r!ta#s!ta#t!ta#u!ta#v!ta#x!ta#z!ta#{!ta(r!ta(y!ta(z!ta~Oa!ta'z!ta'w!ta!Y!ta!k!tav!ta!_!ta%i!ta!g!ta~P!?rOh%VOn+gO!_'`O%i+fO~O!g+iOa(]X!_(]X'z(]X!](]X~Oa%nO!_XO'z%nO~Oh%VO!l%eO~Oh%VO!l%eO(T%gO~O!g#vO#k(xO~Ob+tO%j+uO(T+qO(VTO(YUO!^)XP~O!]+vO`)WX~O[+zO~O`+{O~O!_&PO(T%gO(U!lO`)WP~O%j,OO~P;SOh%VO#`,SO~Oh%VOn,VO!_$|O~O!_,XO~O!Q,ZO!_XO~O%n%vO~O!x,`O~Oe,eO~Ob,fO(T#nO(VTO(YUO!^)VP~Oe%}O~O%j!QO(T&ZO~P=gO[,kO`,jO~OPYOQYOSfOdzOeyOpkOrYOskOtkOzkO|YO!OYO!SWO!WkO!XkO!iuO!lZO!oYO!pYO!qYO!svO!xxO!|]O$niO%h}O(VTO(YUO(aVO(o[O~O!_!eO!u!gO$W!kO(T!dO~P!FyO`,jOa%nO'z%nO~OPYOQYOSfOd!jOe!iOpkOrYOskOtkOzkO|YO!OYO!SWO!WkO!XkO!_!eO!iuO!lZO!oYO!pYO!qYO!svO!x!hO$W!kO$niO(T!dO(VTO(YUO(aVO(o[O~Oa,pOl!OO!uwO%l!OO%m!OO%n!OO~P!IcO!l&oO~O&^,vO~O!_,xO~O&o,zO&q,{OP&laQ&laS&laY&laa&lad&lae&lal&lap&lar&las&lat&laz&la|&la!O&la!S&la!W&la!X&la!_&la!i&la!l&la!o&la!p&la!q&la!s&la!u&la!x&la!|&la$W&la$n&la%h&la%j&la%l&la%m&la%n&la%q&la%s&la%v&la%w&la%y&la&W&la&^&la&`&la&b&la&d&la&g&la&m&la&s&la&u&la&w&la&y&la&{&la'w&la(T&la(V&la(Y&la(a&la(o&la!^&la&e&lab&la&j&la~O(T-QO~Oh!eX!]!RX!^!RX!g!RX!g!eX!l!eX#`!RX~O!]!eX!^!eX~P#!iO!g-VO#`-UOh(jX!]#hX!^#hX!g(jX!l(jX~O!](jX!^(jX~P##[Oh%VO!g-XO!l%eO!]!aX!^!aX~Os!nO!S!oO(VTO(YUO(e!mO~OP<UOQ<UOSfOd>ROe!iOpkOr<UOskOtkOzkO|<UO!O<UO!SWO!WkO!XkO!_!eO!i<XO!lZO!o<UO!p<UO!q<UO!s<YO!u<]O!x!hO$W!kO$n>PO(VTO(YUO(aVO(o[O~O(T=QO~P#$qO!]-]O!^(iX~O!^-_O~O!g-VO#`-UO!]#hX!^#hX~O!]-`O!^(xX~O!^-bO~O!c-cO!d-cO(U!lO~P#$`O!^-fO~P'_On-iO!_'`O~O!Y-nO~Os!{a!b!{a!c!{a!d!{a#T!{a#U!{a#V!{a#W!{a#X!{a#[!{a#]!{a(U!{a(V!{a(Y!{a(e!{a(o!{a~P!#vO!p-sO#`-qO~PChO!c-uO!d-uO(U!lO~PDWOa%nO#`-qO'z%nO~Oa%nO!g#vO#`-qO'z%nO~Oa%nO!g#vO!p-sO#`-qO'z%nO(r'pO~O(P'xO(Q'xO(R-zO~Ov-{O~O!Y'Wa!]'Wa~P!:tO![.PO!Y'WX!]'WX~P%[O!](VO!Y(ha~O!Y(ha~PHRO!](^O!Y(va~O!S%hO![.TO!_%iO(T%gO!Y'^X!]'^X~O#`.VO!](ta!k(taa(ta'z(ta~O!g#vO~P#,wO!](jO!k(sa~O!S%hO!_%iO#j.ZO(T%gO~Op.`O!S%hO![.]O!_%iO!|]O#i._O#j.]O(T%gO!]'aX!k'aX~OR.dO!l#xO~Oh%VOn.gO!_'`O%i.fO~Oa#ci!]#ci'z#ci'w#ci!Y#ci!k#civ#ci!_#ci%i#ci!g#ci~P!:tOn>]O!Q*OO'y*PO(y$}O(z%PO~O#k#_aa#_a#`#_a'z#_a!]#_a!k#_a!_#_a!Y#_a~P#/sO#k(`XP(`XR(`X[(`Xa(`Xj(`Xr(`X!S(`X!l(`X!p(`X#R(`X#n(`X#o(`X#p(`X#q(`X#r(`X#s(`X#t(`X#u(`X#v(`X#x(`X#z(`X#{(`X'z(`X(a(`X(r(`X!k(`X!Y(`X'w(`Xv(`X!_(`X%i(`X!g(`X~P!6kO!].tO!k(kX~P!:tO!k.wO~O!Y.yO~OP$[OR#zO!Q#yO!S#{O!l#xO!p$[O(aVO[#mia#mij#mir#mi!]#mi#R#mi#o#mi#p#mi#q#mi#r#mi#s#mi#t#mi#u#mi#v#mi#x#mi#z#mi#{#mi'z#mi(r#mi(y#mi(z#mi'w#mi!Y#mi!k#miv#mi!_#mi%i#mi!g#mi~O#n#mi~P#3cO#n$OO~P#3cOP$[OR#zOr$aO!Q#yO!S#{O!l#xO!p$[O#n$OO#o$PO#p$PO#q$PO(aVO[#mia#mij#mi!]#mi#R#mi#s#mi#t#mi#u#mi#v#mi#x#mi#z#mi#{#mi'z#mi(r#mi(y#mi(z#mi'w#mi!Y#mi!k#miv#mi!_#mi%i#mi!g#mi~O#r#mi~P#6QO#r$QO~P#6QOP$[OR#zO[$cOj$ROr$aO!Q#yO!S#{O!l#xO!p$[O#R$RO#n$OO#o$PO#p$PO#q$PO#r$QO#s$RO#t$RO#u$bO(aVOa#mi!]#mi#x#mi#z#mi#{#mi'z#mi(r#mi(y#mi(z#mi'w#mi!Y#mi!k#miv#mi!_#mi%i#mi!g#mi~O#v#mi~P#8oOP$[OR#zO[$cOj$ROr$aO!Q#yO!S#{O!l#xO!p$[O#R$RO#n$OO#o$PO#p$PO#q$PO#r$QO#s$RO#t$RO#u$bO#v$SO(aVO(z#}Oa#mi!]#mi#z#mi#{#mi'z#mi(r#mi(y#mi'w#mi!Y#mi!k#miv#mi!_#mi%i#mi!g#mi~O#x$UO~P#;VO#x#mi~P#;VO#v$SO~P#8oOP$[OR#zO[$cOj$ROr$aO!Q#yO!S#{O!l#xO!p$[O#R$RO#n$OO#o$PO#p$PO#q$PO#r$QO#s$RO#t$RO#u$bO#v$SO#x$UO(aVO(y#|O(z#}Oa#mi!]#mi#{#mi'z#mi(r#mi'w#mi!Y#mi!k#miv#mi!_#mi%i#mi!g#mi~O#z#mi~P#={O#z$WO~P#={OP]XR]X[]Xj]Xr]X!Q]X!S]X!l]X!p]X#R]X#S]X#`]X#kfX#n]X#o]X#p]X#q]X#r]X#s]X#t]X#u]X#v]X#x]X#z]X#{]X$Q]X(a]X(r]X(y]X(z]X!]]X!^]X~O$O]X~P#@jOP$[OR#zO[<mOj<bOr<kO!Q#yO!S#{O!l#xO!p$[O#R<bO#n<_O#o<`O#p<`O#q<`O#r<aO#s<bO#t<bO#u<lO#v<cO#x<eO#z<gO#{<hO(aVO(r$YO(y#|O(z#}O~O$O.{O~P#BwO#S$dO#`<nO$Q<nO$O(gX!^(gX~P! uOa'da!]'da'z'da'w'da!k'da!Y'dav'da!_'da%i'da!g'da~P!:tO[#mia#mij#mir#mi!]#mi#R#mi#r#mi#s#mi#t#mi#u#mi#v#mi#x#mi#z#mi#{#mi'z#mi(r#mi'w#mi!Y#mi!k#miv#mi!_#mi%i#mi!g#mi~OP$[OR#zO!Q#yO!S#{O!l#xO!p$[O#n$OO#o$PO#p$PO#q$PO(aVO(y#mi(z#mi~P#EyOn>]O!Q*OO'y*PO(y$}O(z%POP#miR#mi!S#mi!l#mi!p#mi#n#mi#o#mi#p#mi#q#mi(a#mi~P#EyO!]/POg(pX~P!1WOg/RO~Oa$Pi!]$Pi'z$Pi'w$Pi!Y$Pi!k$Piv$Pi!_$Pi%i$Pi!g$Pi~P!:tO$]/SO$_/SO~O$]/TO$_/TO~O!g)hO#`/UO!_$cX$Z$cX$]$cX$_$cX$f$cX~O![/VO~O!_)kO$Z/XO$])jO$_)jO$f/YO~O!]<iO!^(fX~P#BwO!^/ZO~O!g)hO$f({X~O$f/]O~Ov/^O~P!&zOx)yO(b)zO(c/aO~O!S/dO~O(y$}On%aa!Q%aa'y%aa(z%aa!]%aa#`%aa~Og%aa$O%aa~P#L{O(z%POn%ca!Q%ca'y%ca(y%ca!]%ca#`%ca~Og%ca$O%ca~P#MnO!]fX!gfX!kfX!k$zX(rfX~P!0SOp%WO![/mO!](^O(T/lO!Y(vP!Y)PP~P!1uOr*sO!b*qO!c*kO!d*kO!l*bO#[*rO%`*mO(U!lO(VTO(YUO~Os<}O!S/nO![+[O!^*pO(e<|O!^(xP~P$ [O!k/oO~P#/sO!]/pO!g#vO(r'pO!k)OX~O!k/uO~OnoX!QoX'yoX(yoX(zoX~O!g#vO!koX~P$#OOp/wO!S%hO![*^O!_%iO(T%gO!k)OP~O#k/xO~O!Y$zX!]$zX!g%RX~P!0SO!]/yO!Y)PX~P#/sO!g/{O~O!Y/}O~OpkO(T0OO~P.iOh%VOr0TO!g#vO!l%eO(r'pO~O!g+iO~Oa%nO!]0XO'z%nO~O!^0ZO~P!5iO!c0[O!d0[O(U!lO~P#$`Os!nO!S0]O(VTO(YUO(e!mO~O#[0_O~Og%aa!]%aa#`%aa$O%aa~P!1WOg%ca!]%ca#`%ca$O%ca~P!1WOj%dOk%dOl%dO(T&ZOg'mX!]'mX~O!]*yOg(^a~Og0hO~On0jO#`0iOg(_a!](_a~OR0kO!Q0kO!S0lO#S$dOn}a'y}a(y}a(z}a!]}a#`}a~Og}a$O}a~P$(cO!Q*OO'y*POn$sa(y$sa(z$sa!]$sa#`$sa~Og$sa$O$sa~P$)_O!Q*OO'y*POn$ua(y$ua(z$ua!]$ua#`$ua~Og$ua$O$ua~P$*QO#k0oO~Og%Ta!]%Ta#`%Ta$O%Ta~P!1WO!g#vO~O#k0rO~O!]+^Oa)Ta'z)Ta~OR#zO!Q#yO!S#{O!l#xO(aVOP!ri[!rij!rir!ri!]!ri!p!ri#R!ri#n!ri#o!ri#p!ri#q!ri#r!ri#s!ri#t!ri#u!ri#v!ri#x!ri#z!ri#{!ri(r!ri(y!ri(z!ri~Oa!ri'z!ri'w!ri!Y!ri!k!riv!ri!_!ri%i!ri!g!ri~P$+oOh%VOr%XOs$tOt$tOz%YO|%ZO!O<sO!S${O!_$|O!i>VO!l$xO#j<yO$W%`O$t<uO$v<wO$y%aO(VTO(YUO(a$uO(y$}O(z%PO~Op0{O%]0|O(T0zO~P$.VO!g+iOa(]a!_(]a'z(]a!](]a~O#k1SO~O[]X!]fX!^fX~O!]1TO!^)XX~O!^1VO~O[1WO~Ob1YO(T+qO(VTO(YUO~O!_&PO(T%gO`'uX!]'uX~O!]+vO`)Wa~O!k1]O~P!:tO[1`O~O`1aO~O#`1fO~On1iO!_$|O~O(e(|O!^)UP~Oh%VOn1rO!_1oO%i1qO~O[1|O!]1zO!^)VX~O!^1}O~O`2POa%nO'z%nO~O(T#nO(VTO(YUO~O#S$dO#`$eO$Q$eOP(gXR(gX[(gXr(gX!Q(gX!S(gX!](gX!l(gX!p(gX#R(gX#n(gX#o(gX#p(gX#q(gX#r(gX#s(gX#t(gX#u(gX#v(gX#x(gX#z(gX#{(gX(a(gX(r(gX(y(gX(z(gX~Oj2SO&[2TOa(gX~P$3pOj2SO#`$eO&[2TO~Oa2VO~P%[Oa2XO~O&e2[OP&ciQ&ciS&ciY&cia&cid&cie&cil&cip&cir&cis&cit&ciz&ci|&ci!O&ci!S&ci!W&ci!X&ci!_&ci!i&ci!l&ci!o&ci!p&ci!q&ci!s&ci!u&ci!x&ci!|&ci$W&ci$n&ci%h&ci%j&ci%l&ci%m&ci%n&ci%q&ci%s&ci%v&ci%w&ci%y&ci&W&ci&^&ci&`&ci&b&ci&d&ci&g&ci&m&ci&s&ci&u&ci&w&ci&y&ci&{&ci'w&ci(T&ci(V&ci(Y&ci(a&ci(o&ci!^&cib&ci&j&ci~Ob2bO!^2`O&j2aO~P`O!_XO!l2dO~O&q,{OP&liQ&liS&liY&lia&lid&lie&lil&lip&lir&lis&lit&liz&li|&li!O&li!S&li!W&li!X&li!_&li!i&li!l&li!o&li!p&li!q&li!s&li!u&li!x&li!|&li$W&li$n&li%h&li%j&li%l&li%m&li%n&li%q&li%s&li%v&li%w&li%y&li&W&li&^&li&`&li&b&li&d&li&g&li&m&li&s&li&u&li&w&li&y&li&{&li'w&li(T&li(V&li(Y&li(a&li(o&li!^&li&e&lib&li&j&li~O!Y2jO~O!]!aa!^!aa~P#BwOs!nO!S!oO![2pO(e!mO!]'XX!^'XX~P@nO!]-]O!^(ia~O!]'_X!^'_X~P!9|O!]-`O!^(xa~O!^2wO~P'_Oa%nO#`3QO'z%nO~Oa%nO!g#vO#`3QO'z%nO~Oa%nO!g#vO!p3UO#`3QO'z%nO(r'pO~Oa%nO'z%nO~P!:tO!]$_Ov$qa~O!Y'Wi!]'Wi~P!:tO!](VO!Y(hi~O!](^O!Y(vi~O!Y(wi!](wi~P!:tO!](ti!k(tia(ti'z(ti~P!:tO#`3WO!](ti!k(tia(ti'z(ti~O!](jO!k(si~O!S%hO!_%iO!|]O#i3]O#j3[O(T%gO~O!S%hO!_%iO#j3[O(T%gO~On3dO!_'`O%i3cO~Oh%VOn3dO!_'`O%i3cO~O#k%aaP%aaR%aa[%aaa%aaj%aar%aa!S%aa!l%aa!p%aa#R%aa#n%aa#o%aa#p%aa#q%aa#r%aa#s%aa#t%aa#u%aa#v%aa#x%aa#z%aa#{%aa'z%aa(a%aa(r%aa!k%aa!Y%aa'w%aav%aa!_%aa%i%aa!g%aa~P#L{O#k%caP%caR%ca[%caa%caj%car%ca!S%ca!l%ca!p%ca#R%ca#n%ca#o%ca#p%ca#q%ca#r%ca#s%ca#t%ca#u%ca#v%ca#x%ca#z%ca#{%ca'z%ca(a%ca(r%ca!k%ca!Y%ca'w%cav%ca!_%ca%i%ca!g%ca~P#MnO#k%aaP%aaR%aa[%aaa%aaj%aar%aa!S%aa!]%aa!l%aa!p%aa#R%aa#n%aa#o%aa#p%aa#q%aa#r%aa#s%aa#t%aa#u%aa#v%aa#x%aa#z%aa#{%aa'z%aa(a%aa(r%aa!k%aa!Y%aa'w%aa#`%aav%aa!_%aa%i%aa!g%aa~P#/sO#k%caP%caR%ca[%caa%caj%car%ca!S%ca!]%ca!l%ca!p%ca#R%ca#n%ca#o%ca#p%ca#q%ca#r%ca#s%ca#t%ca#u%ca#v%ca#x%ca#z%ca#{%ca'z%ca(a%ca(r%ca!k%ca!Y%ca'w%ca#`%cav%ca!_%ca%i%ca!g%ca~P#/sO#k}aP}a[}aa}aj}ar}a!l}a!p}a#R}a#n}a#o}a#p}a#q}a#r}a#s}a#t}a#u}a#v}a#x}a#z}a#{}a'z}a(a}a(r}a!k}a!Y}a'w}av}a!_}a%i}a!g}a~P$(cO#k$saP$saR$sa[$saa$saj$sar$sa!S$sa!l$sa!p$sa#R$sa#n$sa#o$sa#p$sa#q$sa#r$sa#s$sa#t$sa#u$sa#v$sa#x$sa#z$sa#{$sa'z$sa(a$sa(r$sa!k$sa!Y$sa'w$sav$sa!_$sa%i$sa!g$sa~P$)_O#k$uaP$uaR$ua[$uaa$uaj$uar$ua!S$ua!l$ua!p$ua#R$ua#n$ua#o$ua#p$ua#q$ua#r$ua#s$ua#t$ua#u$ua#v$ua#x$ua#z$ua#{$ua'z$ua(a$ua(r$ua!k$ua!Y$ua'w$uav$ua!_$ua%i$ua!g$ua~P$*QO#k%TaP%TaR%Ta[%Taa%Taj%Tar%Ta!S%Ta!]%Ta!l%Ta!p%Ta#R%Ta#n%Ta#o%Ta#p%Ta#q%Ta#r%Ta#s%Ta#t%Ta#u%Ta#v%Ta#x%Ta#z%Ta#{%Ta'z%Ta(a%Ta(r%Ta!k%Ta!Y%Ta'w%Ta#`%Tav%Ta!_%Ta%i%Ta!g%Ta~P#/sOa#cq!]#cq'z#cq'w#cq!Y#cq!k#cqv#cq!_#cq%i#cq!g#cq~P!:tO![3lO!]'YX!k'YX~P%[O!].tO!k(ka~O!].tO!k(ka~P!:tO!Y3oO~O$O!na!^!na~PKlO$O!ja!]!ja!^!ja~P#BwO$O!ra!^!ra~P!=[O$O!ta!^!ta~P!?rOg']X!]']X~P!,TO!]/POg(pa~OSfO!_4TO$d4UO~O!^4YO~Ov4ZO~P#/sOa$mq!]$mq'z$mq'w$mq!Y$mq!k$mqv$mq!_$mq%i$mq!g$mq~P!:tO!Y4]O~P!&zO!S4^O~O!Q*OO'y*PO(z%POn'ia(y'ia!]'ia#`'ia~Og'ia$O'ia~P%-fO!Q*OO'y*POn'ka(y'ka(z'ka!]'ka#`'ka~Og'ka$O'ka~P%.XO(r$YO~P#/sO!YfX!Y$zX!]fX!]$zX!g%RX#`fX~P!0SOp%WO(T=WO~P!1uOp4bO!S%hO![4aO!_%iO(T%gO!]'eX!k'eX~O!]/pO!k)Oa~O!]/pO!g#vO!k)Oa~O!]/pO!g#vO(r'pO!k)Oa~Og$|i!]$|i#`$|i$O$|i~P!1WO![4jO!Y'gX!]'gX~P!3tO!]/yO!Y)Pa~O!]/yO!Y)Pa~P#/sOP]XR]X[]Xj]Xr]X!Q]X!S]X!Y]X!]]X!l]X!p]X#R]X#S]X#`]X#kfX#n]X#o]X#p]X#q]X#r]X#s]X#t]X#u]X#v]X#x]X#z]X#{]X$Q]X(a]X(r]X(y]X(z]X~Oj%YX!g%YX~P%2OOj4oO!g#vO~Oh%VO!g#vO!l%eO~Oh%VOr4tO!l%eO(r'pO~Or4yO!g#vO(r'pO~Os!nO!S4zO(VTO(YUO(e!mO~O(y$}On%ai!Q%ai'y%ai(z%ai!]%ai#`%ai~Og%ai$O%ai~P%5oO(z%POn%ci!Q%ci'y%ci(y%ci!]%ci#`%ci~Og%ci$O%ci~P%6bOg(_i!](_i~P!1WO#`5QOg(_i!](_i~P!1WO!k5VO~Oa$oq!]$oq'z$oq'w$oq!Y$oq!k$oqv$oq!_$oq%i$oq!g$oq~P!:tO!Y5ZO~O!]5[O!_)QX~P#/sOa$zX!_$zX%^]X'z$zX!]$zX~P!0SO%^5_OaoX!_oX'zoX!]oX~P$#OOp5`O(T#nO~O%^5_O~Ob5fO%j5gO(T+qO(VTO(YUO!]'tX!^'tX~O!]1TO!^)Xa~O[5kO~O`5lO~O[5pO~Oa%nO'z%nO~P#/sO!]5uO#`5wO!^)UX~O!^5xO~Or6OOs!nO!S*iO!b!yO!c!vO!d!vO!|<VO#T!pO#U!pO#V!pO#W!pO#X!pO#[5}O#]!zO(U!lO(VTO(YUO(e!mO(o!sO~O!^5|O~P%;eOn6TO!_1oO%i6SO~Oh%VOn6TO!_1oO%i6SO~Ob6[O(T#nO(VTO(YUO!]'sX!^'sX~O!]1zO!^)Va~O(VTO(YUO(e6^O~O`6bO~Oj6eO&[6fO~PNXO!k6gO~P%[Oa6iO~Oa6iO~P%[Ob2bO!^6nO&j2aO~P`O!g6pO~O!g6rOh(ji!](ji!^(ji!g(ji!l(jir(ji(r(ji~O!]#hi!^#hi~P#BwO#`6sO!]#hi!^#hi~O!]!ai!^!ai~P#BwOa%nO#`6|O'z%nO~Oa%nO!g#vO#`6|O'z%nO~O!](tq!k(tqa(tq'z(tq~P!:tO!](jO!k(sq~O!S%hO!_%iO#j7TO(T%gO~O!_'`O%i7WO~On7[O!_'`O%i7WO~O#k'iaP'iaR'ia['iaa'iaj'iar'ia!S'ia!l'ia!p'ia#R'ia#n'ia#o'ia#p'ia#q'ia#r'ia#s'ia#t'ia#u'ia#v'ia#x'ia#z'ia#{'ia'z'ia(a'ia(r'ia!k'ia!Y'ia'w'iav'ia!_'ia%i'ia!g'ia~P%-fO#k'kaP'kaR'ka['kaa'kaj'kar'ka!S'ka!l'ka!p'ka#R'ka#n'ka#o'ka#p'ka#q'ka#r'ka#s'ka#t'ka#u'ka#v'ka#x'ka#z'ka#{'ka'z'ka(a'ka(r'ka!k'ka!Y'ka'w'kav'ka!_'ka%i'ka!g'ka~P%.XO#k$|iP$|iR$|i[$|ia$|ij$|ir$|i!S$|i!]$|i!l$|i!p$|i#R$|i#n$|i#o$|i#p$|i#q$|i#r$|i#s$|i#t$|i#u$|i#v$|i#x$|i#z$|i#{$|i'z$|i(a$|i(r$|i!k$|i!Y$|i'w$|i#`$|iv$|i!_$|i%i$|i!g$|i~P#/sO#k%aiP%aiR%ai[%aia%aij%air%ai!S%ai!l%ai!p%ai#R%ai#n%ai#o%ai#p%ai#q%ai#r%ai#s%ai#t%ai#u%ai#v%ai#x%ai#z%ai#{%ai'z%ai(a%ai(r%ai!k%ai!Y%ai'w%aiv%ai!_%ai%i%ai!g%ai~P%5oO#k%ciP%ciR%ci[%cia%cij%cir%ci!S%ci!l%ci!p%ci#R%ci#n%ci#o%ci#p%ci#q%ci#r%ci#s%ci#t%ci#u%ci#v%ci#x%ci#z%ci#{%ci'z%ci(a%ci(r%ci!k%ci!Y%ci'w%civ%ci!_%ci%i%ci!g%ci~P%6bO!]'Ya!k'Ya~P!:tO!].tO!k(ki~O$O#ci!]#ci!^#ci~P#BwOP$[OR#zO!Q#yO!S#{O!l#xO!p$[O(aVO[#mij#mir#mi#R#mi#o#mi#p#mi#q#mi#r#mi#s#mi#t#mi#u#mi#v#mi#x#mi#z#mi#{#mi$O#mi(r#mi(y#mi(z#mi!]#mi!^#mi~O#n#mi~P%NdO#n<_O~P%NdOP$[OR#zOr<kO!Q#yO!S#{O!l#xO!p$[O#n<_O#o<`O#p<`O#q<`O(aVO[#mij#mi#R#mi#s#mi#t#mi#u#mi#v#mi#x#mi#z#mi#{#mi$O#mi(r#mi(y#mi(z#mi!]#mi!^#mi~O#r#mi~P&!lO#r<aO~P&!lOP$[OR#zO[<mOj<bOr<kO!Q#yO!S#{O!l#xO!p$[O#R<bO#n<_O#o<`O#p<`O#q<`O#r<aO#s<bO#t<bO#u<lO(aVO#x#mi#z#mi#{#mi$O#mi(r#mi(y#mi(z#mi!]#mi!^#mi~O#v#mi~P&$tOP$[OR#zO[<mOj<bOr<kO!Q#yO!S#{O!l#xO!p$[O#R<bO#n<_O#o<`O#p<`O#q<`O#r<aO#s<bO#t<bO#u<lO#v<cO(aVO(z#}O#z#mi#{#mi$O#mi(r#mi(y#mi!]#mi!^#mi~O#x<eO~P&&uO#x#mi~P&&uO#v<cO~P&$tOP$[OR#zO[<mOj<bOr<kO!Q#yO!S#{O!l#xO!p$[O#R<bO#n<_O#o<`O#p<`O#q<`O#r<aO#s<bO#t<bO#u<lO#v<cO#x<eO(aVO(y#|O(z#}O#{#mi$O#mi(r#mi!]#mi!^#mi~O#z#mi~P&)UO#z<gO~P&)UOa#|y!]#|y'z#|y'w#|y!Y#|y!k#|yv#|y!_#|y%i#|y!g#|y~P!:tO[#mij#mir#mi#R#mi#r#mi#s#mi#t#mi#u#mi#v#mi#x#mi#z#mi#{#mi$O#mi(r#mi!]#mi!^#mi~OP$[OR#zO!Q#yO!S#{O!l#xO!p$[O#n<_O#o<`O#p<`O#q<`O(aVO(y#mi(z#mi~P&,QOn>^O!Q*OO'y*PO(y$}O(z%POP#miR#mi!S#mi!l#mi!p#mi#n#mi#o#mi#p#mi#q#mi(a#mi~P&,QO#S$dOP(`XR(`X[(`Xj(`Xn(`Xr(`X!Q(`X!S(`X!l(`X!p(`X#R(`X#n(`X#o(`X#p(`X#q(`X#r(`X#s(`X#t(`X#u(`X#v(`X#x(`X#z(`X#{(`X$O(`X'y(`X(a(`X(r(`X(y(`X(z(`X!](`X!^(`X~O$O$Pi!]$Pi!^$Pi~P#BwO$O!ri!^!ri~P$+oOg']a!]']a~P!1WO!^7nO~O!]'da!^'da~P#BwO!Y7oO~P#/sO!g#vO(r'pO!]'ea!k'ea~O!]/pO!k)Oi~O!]/pO!g#vO!k)Oi~Og$|q!]$|q#`$|q$O$|q~P!1WO!Y'ga!]'ga~P#/sO!g7vO~O!]/yO!Y)Pi~P#/sO!]/yO!Y)Pi~O!Y7yO~Oh%VOr8OO!l%eO(r'pO~Oj8QO!g#vO~Or8TO!g#vO(r'pO~O!Q*OO'y*PO(z%POn'ja(y'ja!]'ja#`'ja~Og'ja$O'ja~P&5RO!Q*OO'y*POn'la(y'la(z'la!]'la#`'la~Og'la$O'la~P&5tOg(_q!](_q~P!1WO#`8VOg(_q!](_q~P!1WO!Y8WO~Og%Oq!]%Oq#`%Oq$O%Oq~P!1WOa$oy!]$oy'z$oy'w$oy!Y$oy!k$oyv$oy!_$oy%i$oy!g$oy~P!:tO!g6rO~O!]5[O!_)Qa~O!_'`OP$TaR$Ta[$Taj$Tar$Ta!Q$Ta!S$Ta!]$Ta!l$Ta!p$Ta#R$Ta#n$Ta#o$Ta#p$Ta#q$Ta#r$Ta#s$Ta#t$Ta#u$Ta#v$Ta#x$Ta#z$Ta#{$Ta(a$Ta(r$Ta(y$Ta(z$Ta~O%i7WO~P&8fO%^8[Oa%[i!_%[i'z%[i!]%[i~Oa#cy!]#cy'z#cy'w#cy!Y#cy!k#cyv#cy!_#cy%i#cy!g#cy~P!:tO[8^O~Ob8`O(T+qO(VTO(YUO~O!]1TO!^)Xi~O`8dO~O(e(|O!]'pX!^'pX~O!]5uO!^)Ua~O!^8nO~P%;eO(o!sO~P$&YO#[8oO~O!_1oO~O!_1oO%i8qO~On8tO!_1oO%i8qO~O[8yO!]'sa!^'sa~O!]1zO!^)Vi~O!k8}O~O!k9OO~O!k9RO~O!k9RO~P%[Oa9TO~O!g9UO~O!k9VO~O!](wi!^(wi~P#BwOa%nO#`9_O'z%nO~O!](ty!k(tya(ty'z(ty~P!:tO!](jO!k(sy~O%i9bO~P&8fO!_'`O%i9bO~O#k$|qP$|qR$|q[$|qa$|qj$|qr$|q!S$|q!]$|q!l$|q!p$|q#R$|q#n$|q#o$|q#p$|q#q$|q#r$|q#s$|q#t$|q#u$|q#v$|q#x$|q#z$|q#{$|q'z$|q(a$|q(r$|q!k$|q!Y$|q'w$|q#`$|qv$|q!_$|q%i$|q!g$|q~P#/sO#k'jaP'jaR'ja['jaa'jaj'jar'ja!S'ja!l'ja!p'ja#R'ja#n'ja#o'ja#p'ja#q'ja#r'ja#s'ja#t'ja#u'ja#v'ja#x'ja#z'ja#{'ja'z'ja(a'ja(r'ja!k'ja!Y'ja'w'jav'ja!_'ja%i'ja!g'ja~P&5RO#k'laP'laR'la['laa'laj'lar'la!S'la!l'la!p'la#R'la#n'la#o'la#p'la#q'la#r'la#s'la#t'la#u'la#v'la#x'la#z'la#{'la'z'la(a'la(r'la!k'la!Y'la'w'lav'la!_'la%i'la!g'la~P&5tO#k%OqP%OqR%Oq[%Oqa%Oqj%Oqr%Oq!S%Oq!]%Oq!l%Oq!p%Oq#R%Oq#n%Oq#o%Oq#p%Oq#q%Oq#r%Oq#s%Oq#t%Oq#u%Oq#v%Oq#x%Oq#z%Oq#{%Oq'z%Oq(a%Oq(r%Oq!k%Oq!Y%Oq'w%Oq#`%Oqv%Oq!_%Oq%i%Oq!g%Oq~P#/sO!]'Yi!k'Yi~P!:tO$O#cq!]#cq!^#cq~P#BwO(y$}OP%aaR%aa[%aaj%aar%aa!S%aa!l%aa!p%aa#R%aa#n%aa#o%aa#p%aa#q%aa#r%aa#s%aa#t%aa#u%aa#v%aa#x%aa#z%aa#{%aa$O%aa(a%aa(r%aa!]%aa!^%aa~On%aa!Q%aa'y%aa(z%aa~P&IyO(z%POP%caR%ca[%caj%car%ca!S%ca!l%ca!p%ca#R%ca#n%ca#o%ca#p%ca#q%ca#r%ca#s%ca#t%ca#u%ca#v%ca#x%ca#z%ca#{%ca$O%ca(a%ca(r%ca!]%ca!^%ca~On%ca!Q%ca'y%ca(y%ca~P&LQOn>^O!Q*OO'y*PO(z%PO~P&IyOn>^O!Q*OO'y*PO(y$}O~P&LQOR0kO!Q0kO!S0lO#S$dOP}a[}aj}an}ar}a!l}a!p}a#R}a#n}a#o}a#p}a#q}a#r}a#s}a#t}a#u}a#v}a#x}a#z}a#{}a$O}a'y}a(a}a(r}a(y}a(z}a!]}a!^}a~O!Q*OO'y*POP$saR$sa[$saj$san$sar$sa!S$sa!l$sa!p$sa#R$sa#n$sa#o$sa#p$sa#q$sa#r$sa#s$sa#t$sa#u$sa#v$sa#x$sa#z$sa#{$sa$O$sa(a$sa(r$sa(y$sa(z$sa!]$sa!^$sa~O!Q*OO'y*POP$uaR$ua[$uaj$uan$uar$ua!S$ua!l$ua!p$ua#R$ua#n$ua#o$ua#p$ua#q$ua#r$ua#s$ua#t$ua#u$ua#v$ua#x$ua#z$ua#{$ua$O$ua(a$ua(r$ua(y$ua(z$ua!]$ua!^$ua~On>^O!Q*OO'y*PO(y$}O(z%PO~OP%TaR%Ta[%Taj%Tar%Ta!S%Ta!l%Ta!p%Ta#R%Ta#n%Ta#o%Ta#p%Ta#q%Ta#r%Ta#s%Ta#t%Ta#u%Ta#v%Ta#x%Ta#z%Ta#{%Ta$O%Ta(a%Ta(r%Ta!]%Ta!^%Ta~P''VO$O$mq!]$mq!^$mq~P#BwO$O$oq!]$oq!^$oq~P#BwO!^9oO~O$O9pO~P!1WO!g#vO!]'ei!k'ei~O!g#vO(r'pO!]'ei!k'ei~O!]/pO!k)Oq~O!Y'gi!]'gi~P#/sO!]/yO!Y)Pq~Or9wO!g#vO(r'pO~O[9yO!Y9xO~P#/sO!Y9xO~Oj:PO!g#vO~Og(_y!](_y~P!1WO!]'na!_'na~P#/sOa%[q!_%[q'z%[q!]%[q~P#/sO[:UO~O!]1TO!^)Xq~O`:YO~O#`:ZO!]'pa!^'pa~O!]5uO!^)Ui~P#BwO!S:]O~O!_1oO%i:`O~O(VTO(YUO(e:eO~O!]1zO!^)Vq~O!k:hO~O!k:iO~O!k:jO~O!k:jO~P%[O#`:mO!]#hy!^#hy~O!]#hy!^#hy~P#BwO%i:rO~P&8fO!_'`O%i:rO~O$O#|y!]#|y!^#|y~P#BwOP$|iR$|i[$|ij$|ir$|i!S$|i!l$|i!p$|i#R$|i#n$|i#o$|i#p$|i#q$|i#r$|i#s$|i#t$|i#u$|i#v$|i#x$|i#z$|i#{$|i$O$|i(a$|i(r$|i!]$|i!^$|i~P''VO!Q*OO'y*PO(z%POP'iaR'ia['iaj'ian'iar'ia!S'ia!l'ia!p'ia#R'ia#n'ia#o'ia#p'ia#q'ia#r'ia#s'ia#t'ia#u'ia#v'ia#x'ia#z'ia#{'ia$O'ia(a'ia(r'ia(y'ia!]'ia!^'ia~O!Q*OO'y*POP'kaR'ka['kaj'kan'kar'ka!S'ka!l'ka!p'ka#R'ka#n'ka#o'ka#p'ka#q'ka#r'ka#s'ka#t'ka#u'ka#v'ka#x'ka#z'ka#{'ka$O'ka(a'ka(r'ka(y'ka(z'ka!]'ka!^'ka~O(y$}OP%aiR%ai[%aij%ain%air%ai!Q%ai!S%ai!l%ai!p%ai#R%ai#n%ai#o%ai#p%ai#q%ai#r%ai#s%ai#t%ai#u%ai#v%ai#x%ai#z%ai#{%ai$O%ai'y%ai(a%ai(r%ai(z%ai!]%ai!^%ai~O(z%POP%ciR%ci[%cij%cin%cir%ci!Q%ci!S%ci!l%ci!p%ci#R%ci#n%ci#o%ci#p%ci#q%ci#r%ci#s%ci#t%ci#u%ci#v%ci#x%ci#z%ci#{%ci$O%ci'y%ci(a%ci(r%ci(y%ci!]%ci!^%ci~O$O$oy!]$oy!^$oy~P#BwO$O#cy!]#cy!^#cy~P#BwO!g#vO!]'eq!k'eq~O!]/pO!k)Oy~O!Y'gq!]'gq~P#/sOr:|O!g#vO(r'pO~O[;QO!Y;PO~P#/sO!Y;PO~Og(_!R!](_!R~P!1WOa%[y!_%[y'z%[y!]%[y~P#/sO!]1TO!^)Xy~O!]5uO!^)Uq~O(T;XO~O!_1oO%i;[O~O!k;_O~O%i;dO~P&8fOP$|qR$|q[$|qj$|qr$|q!S$|q!l$|q!p$|q#R$|q#n$|q#o$|q#p$|q#q$|q#r$|q#s$|q#t$|q#u$|q#v$|q#x$|q#z$|q#{$|q$O$|q(a$|q(r$|q!]$|q!^$|q~P''VO!Q*OO'y*PO(z%POP'jaR'ja['jaj'jan'jar'ja!S'ja!l'ja!p'ja#R'ja#n'ja#o'ja#p'ja#q'ja#r'ja#s'ja#t'ja#u'ja#v'ja#x'ja#z'ja#{'ja$O'ja(a'ja(r'ja(y'ja!]'ja!^'ja~O!Q*OO'y*POP'laR'la['laj'lan'lar'la!S'la!l'la!p'la#R'la#n'la#o'la#p'la#q'la#r'la#s'la#t'la#u'la#v'la#x'la#z'la#{'la$O'la(a'la(r'la(y'la(z'la!]'la!^'la~OP%OqR%Oq[%Oqj%Oqr%Oq!S%Oq!l%Oq!p%Oq#R%Oq#n%Oq#o%Oq#p%Oq#q%Oq#r%Oq#s%Oq#t%Oq#u%Oq#v%Oq#x%Oq#z%Oq#{%Oq$O%Oq(a%Oq(r%Oq!]%Oq!^%Oq~P''VOg%e!Z!]%e!Z#`%e!Z$O%e!Z~P!1WO!Y;hO~P#/sOr;iO!g#vO(r'pO~O[;kO!Y;hO~P#/sO!]'pq!^'pq~P#BwO!]#h!Z!^#h!Z~P#BwO#k%e!ZP%e!ZR%e!Z[%e!Za%e!Zj%e!Zr%e!Z!S%e!Z!]%e!Z!l%e!Z!p%e!Z#R%e!Z#n%e!Z#o%e!Z#p%e!Z#q%e!Z#r%e!Z#s%e!Z#t%e!Z#u%e!Z#v%e!Z#x%e!Z#z%e!Z#{%e!Z'z%e!Z(a%e!Z(r%e!Z!k%e!Z!Y%e!Z'w%e!Z#`%e!Zv%e!Z!_%e!Z%i%e!Z!g%e!Z~P#/sOr;tO!g#vO(r'pO~O!Y;uO~P#/sOr;|O!g#vO(r'pO~O!Y;}O~P#/sOP%e!ZR%e!Z[%e!Zj%e!Zr%e!Z!S%e!Z!l%e!Z!p%e!Z#R%e!Z#n%e!Z#o%e!Z#p%e!Z#q%e!Z#r%e!Z#s%e!Z#t%e!Z#u%e!Z#v%e!Z#x%e!Z#z%e!Z#{%e!Z$O%e!Z(a%e!Z(r%e!Z!]%e!Z!^%e!Z~P''VOr<QO!g#vO(r'pO~Ov(fX~P1qO!Q%rO~P!)[O(U!lO~P!)[O!YfX!]fX#`fX~P%2OOP]XR]X[]Xj]Xr]X!Q]X!S]X!]]X!]fX!l]X!p]X#R]X#S]X#`]X#`fX#kfX#n]X#o]X#p]X#q]X#r]X#s]X#t]X#u]X#v]X#x]X#z]X#{]X$Q]X(a]X(r]X(y]X(z]X~O!gfX!k]X!kfX(rfX~P'LTOP<UOQ<UOSfOd>ROe!iOpkOr<UOskOtkOzkO|<UO!O<UO!SWO!WkO!XkO!_XO!i<XO!lZO!o<UO!p<UO!q<UO!s<YO!u<]O!x!hO$W!kO$n>PO(T)]O(VTO(YUO(aVO(o[O~O!]<iO!^$qa~Oh%VOp%WOr%XOs$tOt$tOz%YO|%ZO!O<tO!S${O!_$|O!i>WO!l$xO#j<zO$W%`O$t<vO$v<xO$y%aO(T(vO(VTO(YUO(a$uO(y$}O(z%PO~Ol)dO~P(!yOr!eX(r!eX~P#!iOr(jX(r(jX~P##[O!^]X!^fX~P'LTO!YfX!Y$zX!]fX!]$zX#`fX~P!0SO#k<^O~O!g#vO#k<^O~O#`<nO~Oj<bO~O#`=OO!](wX!^(wX~O#`<nO!](uX!^(uX~O#k=PO~Og=RO~P!1WO#k=XO~O#k=YO~Og=RO(T&ZO~O!g#vO#k=ZO~O!g#vO#k=PO~O$O=[O~P#BwO#k=]O~O#k=^O~O#k=cO~O#k=dO~O#k=eO~O#k=fO~O$O=gO~P!1WO$O=hO~P!1WOl=sO~P7eOk#S#T#U#W#X#[#i#j#u$n$t$v$y%]%^%h%i%j%q%s%v%w%y%{~(OT#o!X'|(U#ps#n#qr!Q'}$]'}(T$_(e~",
@@ -27714,7 +27926,7 @@
       cache.set(node, completions);
       return completions;
   }
-  const Identifier = /^[\w$\xa1-\uffff][\w$\d\xa1-\uffff]*$/;
+  const Identifier$1 = /^[\w$\xa1-\uffff][\w$\d\xa1-\uffff]*$/;
   const dontComplete = [
       "TemplateString", "String", "RegExp",
       "LineComment", "BlockComment",
@@ -27733,7 +27945,7 @@
       if (dontComplete.indexOf(inner.name) > -1)
           return null;
       let isWord = inner.name == "VariableName" ||
-          inner.to - inner.from < 20 && Identifier.test(context.state.sliceDoc(inner.from, inner.to));
+          inner.to - inner.from < 20 && Identifier$1.test(context.state.sliceDoc(inner.from, inner.to));
       if (!isWord && !context.explicit)
           return null;
       let options = [];
@@ -27744,7 +27956,7 @@
       return {
           options,
           from: isWord ? inner.from : context.pos,
-          validFor: Identifier
+          validFor: Identifier$1
       };
   }
 
@@ -27755,7 +27967,7 @@
   */
   const javascriptLanguage = /*@__PURE__*/LRLanguage.define({
       name: "javascript",
-      parser: /*@__PURE__*/parser$2.configure({
+      parser: /*@__PURE__*/parser$5.configure({
           props: [
               /*@__PURE__*/indentNodeProp.add({
                   IfStatement: /*@__PURE__*/continuedIndent({ except: /^\s*({|else\b)/ }),
@@ -27834,7 +28046,7 @@
           javascriptLanguage.data.of({
               autocomplete: localCompletionSource
           }),
-          config.jsx ? autoCloseTags$1 : [],
+          config.jsx ? autoCloseTags$2 : [],
       ]);
   }
   function findOpenTag(node) {
@@ -27846,7 +28058,7 @@
           node = node.parent;
       }
   }
-  function elementName$1(doc, tree, max = doc.length) {
+  function elementName$3(doc, tree, max = doc.length) {
       for (let ch = tree === null || tree === void 0 ? void 0 : tree.firstChild; ch; ch = ch.nextSibling) {
           if (ch.name == "JSXIdentifier" || ch.name == "JSXBuiltin" || ch.name == "JSXNamespacedName" ||
               ch.name == "JSXMemberExpression")
@@ -27859,7 +28071,7 @@
   Extension that will automatically insert JSX close tags when a `>` or
   `/` is typed.
   */
-  const autoCloseTags$1 = /*@__PURE__*/EditorView.inputHandler.of((view, from, to, text, defaultInsert) => {
+  const autoCloseTags$2 = /*@__PURE__*/EditorView.inputHandler.of((view, from, to, text, defaultInsert) => {
       if ((android ? view.composing : view.compositionStarted) || view.state.readOnly ||
           from != to || (text != ">" && text != "/") ||
           !javascriptLanguage.isActiveAt(view.state, from, -1))
@@ -27877,7 +28089,7 @@
           else if (text == "/" && around.name == "JSXStartCloseTag") {
               let empty = around.parent, base = empty.parent;
               if (base && empty.from == head - 2 &&
-                  ((name = elementName$1(state.doc, base.firstChild, head)) || ((_a = base.firstChild) === null || _a === void 0 ? void 0 : _a.name) == "JSXFragmentTag")) {
+                  ((name = elementName$3(state.doc, base.firstChild, head)) || ((_a = base.firstChild) === null || _a === void 0 ? void 0 : _a.name) == "JSXFragmentTag")) {
                   let insert = `${name}>`;
                   return { range: EditorSelection.cursor(head + insert.length, -1), changes: { from: head, insert } };
               }
@@ -27886,7 +28098,7 @@
               let openTag = findOpenTag(around);
               if (openTag && openTag.name == "JSXOpenTag" &&
                   !/^\/?>|^<\//.test(state.doc.sliceString(head, head + 2)) &&
-                  (name = elementName$1(state.doc, openTag, head)))
+                  (name = elementName$3(state.doc, openTag, head)))
                   return { range, changes: { from: head, insert: `</${name}>` } };
           }
           return { range };
@@ -27909,19 +28121,19 @@
     StartCloseTextareaTag = 3,
     EndTag = 4,
     SelfClosingEndTag = 5,
-    StartTag = 6,
+    StartTag$1 = 6,
     StartScriptTag = 7,
     StartStyleTag = 8,
     StartTextareaTag = 9,
     StartSelfClosingTag = 10,
-    StartCloseTag = 11,
+    StartCloseTag$1 = 11,
     NoMatchStartCloseTag = 12,
     MismatchedStartCloseTag = 13,
     missingCloseTag = 58,
     IncompleteTag = 14,
     IncompleteCloseTag = 15,
-    commentContent$1 = 59,
-    Element = 21,
+    commentContent$1$1 = 59,
+    Element$3 = 21,
     TagName = 23,
     Attribute = 24,
     AttributeName = 25,
@@ -27930,7 +28142,7 @@
     ScriptText = 29,
     StyleText = 32,
     TextareaText = 35,
-    OpenTag = 37,
+    OpenTag$1 = 37,
     CloseTag = 38,
     Dialect_noMatch = 0,
     Dialect_selfClosing = 1;
@@ -27973,46 +28185,46 @@
     tr: {tr: true}
   };
 
-  function nameChar(ch) {
+  function nameChar$1(ch) {
     return ch == 45 || ch == 46 || ch == 58 || ch >= 65 && ch <= 90 || ch == 95 || ch >= 97 && ch <= 122 || ch >= 161
   }
 
-  let cachedName = null, cachedInput = null, cachedPos = 0;
-  function tagNameAfter(input, offset) {
+  let cachedName$1 = null, cachedInput$1 = null, cachedPos$1 = 0;
+  function tagNameAfter$1(input, offset) {
     let pos = input.pos + offset;
-    if (cachedPos == pos && cachedInput == input) return cachedName
+    if (cachedPos$1 == pos && cachedInput$1 == input) return cachedName$1
     let next = input.peek(offset), name = "";
     for (;;) {
-      if (!nameChar(next)) break
+      if (!nameChar$1(next)) break
       name += String.fromCharCode(next);
       next = input.peek(++offset);
     }
     // Undefined to signal there's a <? or <!, null for just missing
-    cachedInput = input; cachedPos = pos;
-    return cachedName = name ? name.toLowerCase() : next == question || next == bang ? undefined : null
+    cachedInput$1 = input; cachedPos$1 = pos;
+    return cachedName$1 = name ? name.toLowerCase() : next == question || next == bang ? undefined : null
   }
 
   const lessThan = 60, greaterThan = 62, slash = 47, question = 63, bang = 33, dash$1 = 45;
 
-  function ElementContext(name, parent) {
+  function ElementContext$1(name, parent) {
     this.name = name;
     this.parent = parent;
   }
 
-  const startTagTerms = [StartTag, StartSelfClosingTag, StartScriptTag, StartStyleTag, StartTextareaTag];
+  const startTagTerms = [StartTag$1, StartSelfClosingTag, StartScriptTag, StartStyleTag, StartTextareaTag];
 
-  const elementContext = new ContextTracker({
+  const elementContext$1 = new ContextTracker({
     start: null,
     shift(context, term, stack, input) {
-      return startTagTerms.indexOf(term) > -1 ? new ElementContext(tagNameAfter(input, 1) || "", context) : context
+      return startTagTerms.indexOf(term) > -1 ? new ElementContext$1(tagNameAfter$1(input, 1) || "", context) : context
     },
     reduce(context, term) {
-      return term == Element && context ? context.parent : context
+      return term == Element$3 && context ? context.parent : context
     },
     reuse(context, node, stack, input) {
       let type = node.type.id;
-      return type == StartTag || type == OpenTag
-        ? new ElementContext(tagNameAfter(input, 1) || "", context) : context
+      return type == StartTag$1 || type == OpenTag$1
+        ? new ElementContext$1(tagNameAfter$1(input, 1) || "", context) : context
     },
     strict: false
   });
@@ -28026,13 +28238,13 @@
     input.advance();
     let close = input.next == slash;
     if (close) input.advance();
-    let name = tagNameAfter(input, 0);
+    let name = tagNameAfter$1(input, 0);
     if (name === undefined) return
     if (!name) return input.acceptToken(close ? IncompleteCloseTag : IncompleteTag)
 
     let parent = stack.context ? stack.context.name : null;
     if (close) {
-      if (name == parent) return input.acceptToken(StartCloseTag)
+      if (name == parent) return input.acceptToken(StartCloseTag$1)
       if (parent && implicitlyClosed[parent]) return input.acceptToken(missingCloseTag, -2)
       if (stack.dialectEnabled(Dialect_noMatch)) return input.acceptToken(NoMatchStartCloseTag)
       for (let cx = stack.context; cx; cx = cx.parent) if (cx.name == name) return
@@ -28043,20 +28255,20 @@
       if (name == "textarea") return input.acceptToken(StartTextareaTag)
       if (selfClosers$1.hasOwnProperty(name)) return input.acceptToken(StartSelfClosingTag)
       if (parent && closeOnOpen[parent] && closeOnOpen[parent][name]) input.acceptToken(missingCloseTag, -1);
-      else input.acceptToken(StartTag);
+      else input.acceptToken(StartTag$1);
     }
   }, {contextual: true});
 
-  const commentContent = new ExternalTokenizer(input => {
+  const commentContent$2 = new ExternalTokenizer(input => {
     for (let dashes = 0, i = 0;; i++) {
       if (input.next < 0) {
-        if (i) input.acceptToken(commentContent$1);
+        if (i) input.acceptToken(commentContent$1$1);
         break
       }
       if (input.next == dash$1) {
         dashes++;
       } else if (input.next == greaterThan && dashes >= 2) {
-        if (i >= 3) input.acceptToken(commentContent$1, -2);
+        if (i >= 3) input.acceptToken(commentContent$1$1, -2);
         break
       } else {
         dashes = 0;
@@ -28137,14 +28349,14 @@
   });
 
   // This file was generated by lezer-generator. You probably shouldn't edit it.
-  const parser$1 = LRParser.deserialize({
+  const parser$4 = LRParser.deserialize({
     version: 14,
     states: ",xOVO!rOOO!ZQ#tO'#CrO!`Q#tO'#C{O!eQ#tO'#DOO!jQ#tO'#DRO!oQ#tO'#DTO!tOaO'#CqO#PObO'#CqO#[OdO'#CqO$kO!rO'#CqOOO`'#Cq'#CqO$rO$fO'#DUO$zQ#tO'#DWO%PQ#tO'#DXOOO`'#Dl'#DlOOO`'#DZ'#DZQVO!rOOO%UQ&rO,59^O%aQ&rO,59gO%lQ&rO,59jO%wQ&rO,59mO&SQ&rO,59oOOOa'#D_'#D_O&_OaO'#CyO&jOaO,59]OOOb'#D`'#D`O&rObO'#C|O&}ObO,59]OOOd'#Da'#DaO'VOdO'#DPO'bOdO,59]OOO`'#Db'#DbO'jO!rO,59]O'qQ#tO'#DSOOO`,59],59]OOOp'#Dc'#DcO'vO$fO,59pOOO`,59p,59pO(OQ#|O,59rO(TQ#|O,59sOOO`-E7X-E7XO(YQ&rO'#CtOOQW'#D['#D[O(hQ&rO1G.xOOOa1G.x1G.xOOO`1G/Z1G/ZO(sQ&rO1G/ROOOb1G/R1G/RO)OQ&rO1G/UOOOd1G/U1G/UO)ZQ&rO1G/XOOO`1G/X1G/XO)fQ&rO1G/ZOOOa-E7]-E7]O)qQ#tO'#CzOOO`1G.w1G.wOOOb-E7^-E7^O)vQ#tO'#C}OOOd-E7_-E7_O){Q#tO'#DQOOO`-E7`-E7`O*QQ#|O,59nOOOp-E7a-E7aOOO`1G/[1G/[OOO`1G/^1G/^OOO`1G/_1G/_O*VQ,UO,59`OOQW-E7Y-E7YOOOa7+$d7+$dOOO`7+$u7+$uOOOb7+$m7+$mOOOd7+$p7+$pOOO`7+$s7+$sO*bQ#|O,59fO*gQ#|O,59iO*lQ#|O,59lOOO`1G/Y1G/YO*qO7[O'#CwO+SOMhO'#CwOOQW1G.z1G.zOOO`1G/Q1G/QOOO`1G/T1G/TOOO`1G/W1G/WOOOO'#D]'#D]O+eO7[O,59cOOQW,59c,59cOOOO'#D^'#D^O+vOMhO,59cOOOO-E7Z-E7ZOOQW1G.}1G.}OOOO-E7[-E7[",
     stateData: ",c~O!_OS~OUSOVPOWQOXROYTO[]O][O^^O_^Oa^Ob^Oc^Od^Oy^O|_O!eZO~OgaO~OgbO~OgcO~OgdO~OgeO~O!XfOPmP![mP~O!YiOQpP![pP~O!ZlORsP![sP~OUSOVPOWQOXROYTOZqO[]O][O^^O_^Oa^Ob^Oc^Od^Oy^O!eZO~O![rO~P#gO!]sO!fuO~OgvO~OgwO~OS|OT}OiyO~OS!POT}OiyO~OS!ROT}OiyO~OS!TOT}OiyO~OS}OT}OiyO~O!XfOPmX![mX~OP!WO![!XO~O!YiOQpX![pX~OQ!ZO![!XO~O!ZlORsX![sX~OR!]O![!XO~O![!XO~P#gOg!_O~O!]sO!f!aO~OS!bO~OS!cO~Oj!dOShXThXihX~OS!fOT!gOiyO~OS!hOT!gOiyO~OS!iOT!gOiyO~OS!jOT!gOiyO~OS!gOT!gOiyO~Og!kO~Og!lO~Og!mO~OS!nO~Ol!qO!a!oO!c!pO~OS!rO~OS!sO~OS!tO~Ob!uOc!uOd!uO!a!wO!b!uO~Ob!xOc!xOd!xO!c!wO!d!xO~Ob!uOc!uOd!uO!a!{O!b!uO~Ob!xOc!xOd!xO!c!{O!d!xO~OT~cbd!ey|!e~",
     goto: "%q!aPPPPPPPPPPPPPPPPPPPPP!b!hP!nPP!zP!}#Q#T#Z#^#a#g#j#m#s#y!bP!b!bP$P$V$m$s$y%P%V%]%cPPPPPPPP%iX^OX`pXUOX`pezabcde{!O!Q!S!UR!q!dRhUR!XhXVOX`pRkVR!XkXWOX`pRnWR!XnXXOX`pQrXR!XpXYOX`pQ`ORx`Q{aQ!ObQ!QcQ!SdQ!UeZ!e{!O!Q!S!UQ!v!oR!z!vQ!y!pR!|!yQgUR!VgQjVR!YjQmWR![mQpXR!^pQtZR!`tS_O`ToXp",
     nodeNames: "⚠ StartCloseTag StartCloseTag StartCloseTag EndTag SelfClosingEndTag StartTag StartTag StartTag StartTag StartTag StartCloseTag StartCloseTag StartCloseTag IncompleteTag IncompleteCloseTag Document Text EntityReference CharacterReference InvalidEntity Element OpenTag TagName Attribute AttributeName Is AttributeValue UnquotedAttributeValue ScriptText CloseTag OpenTag StyleText CloseTag OpenTag TextareaText CloseTag OpenTag CloseTag SelfClosingTag Comment ProcessingInst MismatchedCloseTag CloseTag DoctypeDecl",
     maxTerm: 68,
-    context: elementContext,
+    context: elementContext$1,
     nodeProps: [
       ["closedBy", -10,1,2,3,7,8,9,10,11,12,13,"EndTag",6,"EndTag SelfClosingEndTag",-4,22,31,34,37,"CloseTag"],
       ["openedBy", 4,"StartTag StartCloseTag",5,"StartTag",-4,30,33,36,38,"OpenTag"],
@@ -28155,7 +28367,7 @@
     skippedNodes: [0],
     repeatNodeCount: 9,
     tokenData: "!<p!aR!YOX$qXY,QYZ,QZ[$q[]&X]^,Q^p$qpq,Qqr-_rs3_sv-_vw3}wxHYx}-_}!OH{!O!P-_!P!Q$q!Q![-_![!]Mz!]!^-_!^!_!$S!_!`!;x!`!a&X!a!c-_!c!}Mz!}#R-_#R#SMz#S#T1k#T#oMz#o#s-_#s$f$q$f%W-_%W%oMz%o%p-_%p&aMz&a&b-_&b1pMz1p4U-_4U4dMz4d4e-_4e$ISMz$IS$I`-_$I`$IbMz$Ib$Kh-_$Kh%#tMz%#t&/x-_&/x&EtMz&Et&FV-_&FV;'SMz;'S;:j!#|;:j;=`3X<%l?&r-_?&r?AhMz?Ah?BY$q?BY?MnMz?MnO$q!Z$|caPlW!b`!dpOX$qXZ&XZ[$q[^&X^p$qpq&Xqr$qrs&}sv$qvw+Pwx(tx!^$q!^!_*V!_!a&X!a#S$q#S#T&X#T;'S$q;'S;=`+z<%lO$q!R&bXaP!b`!dpOr&Xrs&}sv&Xwx(tx!^&X!^!_*V!_;'S&X;'S;=`*y<%lO&Xq'UVaP!dpOv&}wx'kx!^&}!^!_(V!_;'S&};'S;=`(n<%lO&}P'pTaPOv'kw!^'k!_;'S'k;'S;=`(P<%lO'kP(SP;=`<%l'kp([S!dpOv(Vx;'S(V;'S;=`(h<%lO(Vp(kP;=`<%l(Vq(qP;=`<%l&}a({WaP!b`Or(trs'ksv(tw!^(t!^!_)e!_;'S(t;'S;=`*P<%lO(t`)jT!b`Or)esv)ew;'S)e;'S;=`)y<%lO)e`)|P;=`<%l)ea*SP;=`<%l(t!Q*^V!b`!dpOr*Vrs(Vsv*Vwx)ex;'S*V;'S;=`*s<%lO*V!Q*vP;=`<%l*V!R*|P;=`<%l&XW+UYlWOX+PZ[+P^p+Pqr+Psw+Px!^+P!a#S+P#T;'S+P;'S;=`+t<%lO+PW+wP;=`<%l+P!Z+}P;=`<%l$q!a,]`aP!b`!dp!_^OX&XXY,QYZ,QZ]&X]^,Q^p&Xpq,Qqr&Xrs&}sv&Xwx(tx!^&X!^!_*V!_;'S&X;'S;=`*y<%lO&X!_-ljiSaPlW!b`!dpOX$qXZ&XZ[$q[^&X^p$qpq&Xqr-_rs&}sv-_vw/^wx(tx!P-_!P!Q$q!Q!^-_!^!_*V!_!a&X!a#S-_#S#T1k#T#s-_#s$f$q$f;'S-_;'S;=`3X<%l?Ah-_?Ah?BY$q?BY?Mn-_?MnO$q[/ebiSlWOX+PZ[+P^p+Pqr/^sw/^x!P/^!P!Q+P!Q!^/^!a#S/^#S#T0m#T#s/^#s$f+P$f;'S/^;'S;=`1e<%l?Ah/^?Ah?BY+P?BY?Mn/^?MnO+PS0rXiSqr0msw0mx!P0m!Q!^0m!a#s0m$f;'S0m;'S;=`1_<%l?Ah0m?BY?Mn0mS1bP;=`<%l0m[1hP;=`<%l/^!V1vciSaP!b`!dpOq&Xqr1krs&}sv1kvw0mwx(tx!P1k!P!Q&X!Q!^1k!^!_*V!_!a&X!a#s1k#s$f&X$f;'S1k;'S;=`3R<%l?Ah1k?Ah?BY&X?BY?Mn1k?MnO&X!V3UP;=`<%l1k!_3[P;=`<%l-_!Z3hV!ahaP!dpOv&}wx'kx!^&}!^!_(V!_;'S&};'S;=`(n<%lO&}!_4WiiSlWd!ROX5uXZ7SZ[5u[^7S^p5uqr8trs7Sst>]tw8twx7Sx!P8t!P!Q5u!Q!]8t!]!^/^!^!a7S!a#S8t#S#T;{#T#s8t#s$f5u$f;'S8t;'S;=`>V<%l?Ah8t?Ah?BY5u?BY?Mn8t?MnO5u!Z5zblWOX5uXZ7SZ[5u[^7S^p5uqr5urs7Sst+Ptw5uwx7Sx!]5u!]!^7w!^!a7S!a#S5u#S#T7S#T;'S5u;'S;=`8n<%lO5u!R7VVOp7Sqs7St!]7S!]!^7l!^;'S7S;'S;=`7q<%lO7S!R7qOb!R!R7tP;=`<%l7S!Z8OYlWb!ROX+PZ[+P^p+Pqr+Psw+Px!^+P!a#S+P#T;'S+P;'S;=`+t<%lO+P!Z8qP;=`<%l5u!_8{iiSlWOX5uXZ7SZ[5u[^7S^p5uqr8trs7Sst/^tw8twx7Sx!P8t!P!Q5u!Q!]8t!]!^:j!^!a7S!a#S8t#S#T;{#T#s8t#s$f5u$f;'S8t;'S;=`>V<%l?Ah8t?Ah?BY5u?BY?Mn8t?MnO5u!_:sbiSlWb!ROX+PZ[+P^p+Pqr/^sw/^x!P/^!P!Q+P!Q!^/^!a#S/^#S#T0m#T#s/^#s$f+P$f;'S/^;'S;=`1e<%l?Ah/^?Ah?BY+P?BY?Mn/^?MnO+P!V<QciSOp7Sqr;{rs7Sst0mtw;{wx7Sx!P;{!P!Q7S!Q!];{!]!^=]!^!a7S!a#s;{#s$f7S$f;'S;{;'S;=`>P<%l?Ah;{?Ah?BY7S?BY?Mn;{?MnO7S!V=dXiSb!Rqr0msw0mx!P0m!Q!^0m!a#s0m$f;'S0m;'S;=`1_<%l?Ah0m?BY?Mn0m!V>SP;=`<%l;{!_>YP;=`<%l8t!_>dhiSlWOX@OXZAYZ[@O[^AY^p@OqrBwrsAYswBwwxAYx!PBw!P!Q@O!Q!]Bw!]!^/^!^!aAY!a#SBw#S#TE{#T#sBw#s$f@O$f;'SBw;'S;=`HS<%l?AhBw?Ah?BY@O?BY?MnBw?MnO@O!Z@TalWOX@OXZAYZ[@O[^AY^p@Oqr@OrsAYsw@OwxAYx!]@O!]!^Az!^!aAY!a#S@O#S#TAY#T;'S@O;'S;=`Bq<%lO@O!RA]UOpAYq!]AY!]!^Ao!^;'SAY;'S;=`At<%lOAY!RAtOc!R!RAwP;=`<%lAY!ZBRYlWc!ROX+PZ[+P^p+Pqr+Psw+Px!^+P!a#S+P#T;'S+P;'S;=`+t<%lO+P!ZBtP;=`<%l@O!_COhiSlWOX@OXZAYZ[@O[^AY^p@OqrBwrsAYswBwwxAYx!PBw!P!Q@O!Q!]Bw!]!^Dj!^!aAY!a#SBw#S#TE{#T#sBw#s$f@O$f;'SBw;'S;=`HS<%l?AhBw?Ah?BY@O?BY?MnBw?MnO@O!_DsbiSlWc!ROX+PZ[+P^p+Pqr/^sw/^x!P/^!P!Q+P!Q!^/^!a#S/^#S#T0m#T#s/^#s$f+P$f;'S/^;'S;=`1e<%l?Ah/^?Ah?BY+P?BY?Mn/^?MnO+P!VFQbiSOpAYqrE{rsAYswE{wxAYx!PE{!P!QAY!Q!]E{!]!^GY!^!aAY!a#sE{#s$fAY$f;'SE{;'S;=`G|<%l?AhE{?Ah?BYAY?BY?MnE{?MnOAY!VGaXiSc!Rqr0msw0mx!P0m!Q!^0m!a#s0m$f;'S0m;'S;=`1_<%l?Ah0m?BY?Mn0m!VHPP;=`<%lE{!_HVP;=`<%lBw!ZHcW!cxaP!b`Or(trs'ksv(tw!^(t!^!_)e!_;'S(t;'S;=`*P<%lO(t!aIYliSaPlW!b`!dpOX$qXZ&XZ[$q[^&X^p$qpq&Xqr-_rs&}sv-_vw/^wx(tx}-_}!OKQ!O!P-_!P!Q$q!Q!^-_!^!_*V!_!a&X!a#S-_#S#T1k#T#s-_#s$f$q$f;'S-_;'S;=`3X<%l?Ah-_?Ah?BY$q?BY?Mn-_?MnO$q!aK_kiSaPlW!b`!dpOX$qXZ&XZ[$q[^&X^p$qpq&Xqr-_rs&}sv-_vw/^wx(tx!P-_!P!Q$q!Q!^-_!^!_*V!_!`&X!`!aMS!a#S-_#S#T1k#T#s-_#s$f$q$f;'S-_;'S;=`3X<%l?Ah-_?Ah?BY$q?BY?Mn-_?MnO$q!TM_XaP!b`!dp!fQOr&Xrs&}sv&Xwx(tx!^&X!^!_*V!_;'S&X;'S;=`*y<%lO&X!aNZ!ZiSgQaPlW!b`!dpOX$qXZ&XZ[$q[^&X^p$qpq&Xqr-_rs&}sv-_vw/^wx(tx}-_}!OMz!O!PMz!P!Q$q!Q![Mz![!]Mz!]!^-_!^!_*V!_!a&X!a!c-_!c!}Mz!}#R-_#R#SMz#S#T1k#T#oMz#o#s-_#s$f$q$f$}-_$}%OMz%O%W-_%W%oMz%o%p-_%p&aMz&a&b-_&b1pMz1p4UMz4U4dMz4d4e-_4e$ISMz$IS$I`-_$I`$IbMz$Ib$Je-_$Je$JgMz$Jg$Kh-_$Kh%#tMz%#t&/x-_&/x&EtMz&Et&FV-_&FV;'SMz;'S;:j!#|;:j;=`3X<%l?&r-_?&r?AhMz?Ah?BY$q?BY?MnMz?MnO$q!a!$PP;=`<%lMz!R!$ZY!b`!dpOq*Vqr!$yrs(Vsv*Vwx)ex!a*V!a!b!4t!b;'S*V;'S;=`*s<%lO*V!R!%Q]!b`!dpOr*Vrs(Vsv*Vwx)ex}*V}!O!%y!O!f*V!f!g!']!g#W*V#W#X!0`#X;'S*V;'S;=`*s<%lO*V!R!&QX!b`!dpOr*Vrs(Vsv*Vwx)ex}*V}!O!&m!O;'S*V;'S;=`*s<%lO*V!R!&vV!b`!dp!ePOr*Vrs(Vsv*Vwx)ex;'S*V;'S;=`*s<%lO*V!R!'dX!b`!dpOr*Vrs(Vsv*Vwx)ex!q*V!q!r!(P!r;'S*V;'S;=`*s<%lO*V!R!(WX!b`!dpOr*Vrs(Vsv*Vwx)ex!e*V!e!f!(s!f;'S*V;'S;=`*s<%lO*V!R!(zX!b`!dpOr*Vrs(Vsv*Vwx)ex!v*V!v!w!)g!w;'S*V;'S;=`*s<%lO*V!R!)nX!b`!dpOr*Vrs(Vsv*Vwx)ex!{*V!{!|!*Z!|;'S*V;'S;=`*s<%lO*V!R!*bX!b`!dpOr*Vrs(Vsv*Vwx)ex!r*V!r!s!*}!s;'S*V;'S;=`*s<%lO*V!R!+UX!b`!dpOr*Vrs(Vsv*Vwx)ex!g*V!g!h!+q!h;'S*V;'S;=`*s<%lO*V!R!+xY!b`!dpOr!+qrs!,hsv!+qvw!-Swx!.[x!`!+q!`!a!/j!a;'S!+q;'S;=`!0Y<%lO!+qq!,mV!dpOv!,hvx!-Sx!`!,h!`!a!-q!a;'S!,h;'S;=`!.U<%lO!,hP!-VTO!`!-S!`!a!-f!a;'S!-S;'S;=`!-k<%lO!-SP!-kO|PP!-nP;=`<%l!-Sq!-xS!dp|POv(Vx;'S(V;'S;=`(h<%lO(Vq!.XP;=`<%l!,ha!.aX!b`Or!.[rs!-Ssv!.[vw!-Sw!`!.[!`!a!.|!a;'S!.[;'S;=`!/d<%lO!.[a!/TT!b`|POr)esv)ew;'S)e;'S;=`)y<%lO)ea!/gP;=`<%l!.[!R!/sV!b`!dp|POr*Vrs(Vsv*Vwx)ex;'S*V;'S;=`*s<%lO*V!R!0]P;=`<%l!+q!R!0gX!b`!dpOr*Vrs(Vsv*Vwx)ex#c*V#c#d!1S#d;'S*V;'S;=`*s<%lO*V!R!1ZX!b`!dpOr*Vrs(Vsv*Vwx)ex#V*V#V#W!1v#W;'S*V;'S;=`*s<%lO*V!R!1}X!b`!dpOr*Vrs(Vsv*Vwx)ex#h*V#h#i!2j#i;'S*V;'S;=`*s<%lO*V!R!2qX!b`!dpOr*Vrs(Vsv*Vwx)ex#m*V#m#n!3^#n;'S*V;'S;=`*s<%lO*V!R!3eX!b`!dpOr*Vrs(Vsv*Vwx)ex#d*V#d#e!4Q#e;'S*V;'S;=`*s<%lO*V!R!4XX!b`!dpOr*Vrs(Vsv*Vwx)ex#X*V#X#Y!+q#Y;'S*V;'S;=`*s<%lO*V!R!4{Y!b`!dpOr!4trs!5ksv!4tvw!6Vwx!8]x!a!4t!a!b!:]!b;'S!4t;'S;=`!;r<%lO!4tq!5pV!dpOv!5kvx!6Vx!a!5k!a!b!7W!b;'S!5k;'S;=`!8V<%lO!5kP!6YTO!a!6V!a!b!6i!b;'S!6V;'S;=`!7Q<%lO!6VP!6lTO!`!6V!`!a!6{!a;'S!6V;'S;=`!7Q<%lO!6VP!7QOyPP!7TP;=`<%l!6Vq!7]V!dpOv!5kvx!6Vx!`!5k!`!a!7r!a;'S!5k;'S;=`!8V<%lO!5kq!7yS!dpyPOv(Vx;'S(V;'S;=`(h<%lO(Vq!8YP;=`<%l!5ka!8bX!b`Or!8]rs!6Vsv!8]vw!6Vw!a!8]!a!b!8}!b;'S!8];'S;=`!:V<%lO!8]a!9SX!b`Or!8]rs!6Vsv!8]vw!6Vw!`!8]!`!a!9o!a;'S!8];'S;=`!:V<%lO!8]a!9vT!b`yPOr)esv)ew;'S)e;'S;=`)y<%lO)ea!:YP;=`<%l!8]!R!:dY!b`!dpOr!4trs!5ksv!4tvw!6Vwx!8]x!`!4t!`!a!;S!a;'S!4t;'S;=`!;r<%lO!4t!R!;]V!b`!dpyPOr*Vrs(Vsv*Vwx)ex;'S*V;'S;=`*s<%lO*V!R!;uP;=`<%l!4t!V!<TXjSaP!b`!dpOr&Xrs&}sv&Xwx(tx!^&X!^!_*V!_;'S&X;'S;=`*y<%lO&X",
-    tokenizers: [scriptTokens, styleTokens, textareaTokens, endTag, tagStart, commentContent, 0, 1, 2, 3, 4, 5],
+    tokenizers: [scriptTokens, styleTokens, textareaTokens, endTag, tagStart, commentContent$2, 0, 1, 2, 3, 4, 5],
     topRules: {"Document":[0,16]},
     dialects: {noMatch: 0, selfClosing: 515},
     tokenPrec: 517
@@ -28211,7 +28423,7 @@
       if (id == StyleText) return maybeNest(node, input, style)
       if (id == TextareaText) return maybeNest(node, input, textarea)
 
-      if (id == Element && other.length) {
+      if (id == Element$3 && other.length) {
         let n = node.node, open = n.firstChild, tagName = open && findTagName(open, input), attrs;
         if (tagName) for (let tag of other) {
           if (tag.tag == tagName && (!tag.attrs || tag.attrs(attrs || (attrs = getAttrs(open, input))))) {
@@ -28257,7 +28469,7 @@
   /* Hand-written tokenizers for CSS tokens that can't be
      expressed by Lezer's built-in tokenizer. */
 
-  const space = [9, 10, 11, 12, 13, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197,
+  const space$1 = [9, 10, 11, 12, 13, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197,
                  8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288];
   const colon = 58, parenL = 40, underscore = 95, bracketL = 91, dash = 45, period = 46,
         hash = 35, percent = 37, ampersand = 38, backslash = 92, newline = 10, asterisk = 42;
@@ -28301,7 +28513,7 @@
   );
 
   const descendant = new ExternalTokenizer(input => {
-    if (space.includes(input.peek(-1))) {
+    if (space$1.includes(input.peek(-1))) {
       let {next} = input;
       if (isAlpha(next) || next == underscore || next == hash || next == period ||
           next == asterisk || next == bracketL || next == colon && isAlpha(input.peek(1)) ||
@@ -28311,7 +28523,7 @@
   });
 
   const unitToken = new ExternalTokenizer(input => {
-    if (!space.includes(input.peek(-1))) {
+    if (!space$1.includes(input.peek(-1))) {
       let {next} = input;
       if (next == percent) { input.advance(); input.acceptToken(Unit); }
       if (isAlpha(next)) {
@@ -28362,7 +28574,7 @@
   const spec_QueryCallee = {__proto__:null,selector:112, layer:166};
   const spec_AtKeyword = {__proto__:null,"@import":162, "@media":174, "@charset":178, "@namespace":182, "@keyframes":188, "@supports":200, "@scope":204};
   const spec_identifier = {__proto__:null,to:207};
-  const parser = LRParser.deserialize({
+  const parser$3 = LRParser.deserialize({
     version: 14,
     states: "EbQYQdOOO#qQdOOP#xO`OOOOQP'#Cf'#CfOOQP'#Ce'#CeO#}QdO'#ChO$nQaO'#CcO$xQdO'#CkO%TQdO'#DpO%YQdO'#DrO%_QdO'#DuO%_QdO'#DxOOQP'#FV'#FVO&eQhO'#EhOOQS'#FU'#FUOOQS'#Ek'#EkQYQdOOO&lQdO'#EOO&PQhO'#EUO&lQdO'#EWO'aQdO'#EYO'lQdO'#E]O'tQhO'#EcO(VQdO'#EeO(bQaO'#CfO)VQ`O'#D{O)[Q`O'#F`O)gQdO'#F`QOQ`OOP)qO&jO'#CaPOOO)C@t)C@tOOQP'#Cj'#CjOOQP,59S,59SO#}QdO,59SO)|QdO,59VO%TQdO,5:[O%YQdO,5:^O%_QdO,5:aO%_QdO,5:cO%_QdO,5:dO%_QdO'#ErO*XQ`O,58}O*aQdO'#DzOOQS,58},58}OOQP'#Cn'#CnOOQO'#Dn'#DnOOQP,59V,59VO*hQ`O,59VO*mQ`O,59VOOQP'#Dq'#DqOOQP,5:[,5:[OOQO'#Ds'#DsO*rQpO,5:^O+]QaO,5:aO+sQaO,5:dOOQW'#DZ'#DZO,ZQhO'#DdO,xQhO'#FaO'tQhO'#DbO-WQ`O'#DhOOQW'#F['#F[O-]Q`O,5;SO-eQ`O'#DeOOQS-E8i-E8iOOQ['#Cs'#CsO-jQdO'#CtO.QQdO'#CzO.hQdO'#C}O/OQ!pO'#DPO1RQ!jO,5:jOOQO'#DU'#DUO*mQ`O'#DTO1cQ!nO'#FXO3`Q`O'#DVO3eQ`O'#DkOOQ['#FX'#FXO-`Q`O,5:pO3jQ!bO,5:rOOQS'#E['#E[O3rQ`O,5:tO3wQdO,5:tOOQO'#E_'#E_O4PQ`O,5:wO4UQhO,5:}O%_QdO'#DgOOQS,5;P,5;PO-eQ`O,5;PO4^QdO,5;PO4fQdO,5:gO4vQdO'#EtO5TQ`O,5;zO5TQ`O,5;zPOOO'#Ej'#EjP5`O&jO,58{POOO,58{,58{OOQP1G.n1G.nOOQP1G.q1G.qO*hQ`O1G.qO*mQ`O1G.qOOQP1G/v1G/vO5kQpO1G/xO5sQaO1G/{O6ZQaO1G/}O6qQaO1G0OO7XQaO,5;^OOQO-E8p-E8pOOQS1G.i1G.iO7cQ`O,5:fO7hQdO'#DoO7oQdO'#CrOOQP1G/x1G/xO&lQdO1G/xO7vQ!jO'#DZO8UQ!bO,59vO8^QhO,5:OOOQO'#F]'#F]O8XQ!bO,59zO'tQhO,59xO8fQhO'#EvO8sQ`O,5;{O9OQhO,59|O9uQhO'#DiOOQW,5:S,5:SOOQS1G0n1G0nOOQW,5:P,5:PO9|Q!fO'#FYOOQS'#FY'#FYOOQS'#Em'#EmO;^QdO,59`OOQ[,59`,59`O;tQdO,59fOOQ[,59f,59fO<[QdO,59iOOQ[,59i,59iOOQ[,59k,59kO&lQdO,59mO<rQhO'#EQOOQW'#EQ'#EQO=WQ`O1G0UO1[QhO1G0UOOQ[,59o,59oO'tQhO'#DXOOQ[,59q,59qO=]Q#tO,5:VOOQS1G0[1G0[OOQS1G0^1G0^OOQS1G0`1G0`O=hQ`O1G0`O=mQdO'#E`OOQS1G0c1G0cOOQS1G0i1G0iO=xQaO,5:RO-`Q`O1G0kOOQS1G0k1G0kO-eQ`O1G0kO>PQ!fO1G0ROOQO1G0R1G0ROOQO,5;`,5;`O>gQdO,5;`OOQO-E8r-E8rO>tQ`O1G1fPOOO-E8h-E8hPOOO1G.g1G.gOOQP7+$]7+$]OOQP7+%d7+%dO&lQdO7+%dOOQS1G0Q1G0QO?PQaO'#F_O?ZQ`O,5:ZO?`Q!fO'#ElO@^QdO'#FWO@hQ`O,59^O@mQ!bO7+%dO&lQdO1G/bO@uQhO1G/fOOQW1G/j1G/jOOQW1G/d1G/dOAWQhO,5;bOOQO-E8t-E8tOAfQhO'#DZOAtQhO'#F^OBPQ`O'#F^OBUQ`O,5:TOOQS-E8k-E8kOOQ[1G.z1G.zOOQ[1G/Q1G/QOOQ[1G/T1G/TOOQ[1G/X1G/XOBZQdO,5:lOOQS7+%p7+%pOB`Q`O7+%pOBeQhO'#DYOBmQ`O,59sO'tQhO,59sOOQ[1G/q1G/qOBuQ`O1G/qOOQS7+%z7+%zOBzQbO'#DPOOQO'#Eb'#EbOCYQ`O'#EaOOQO'#Ea'#EaOCeQ`O'#EwOCmQdO,5:zOOQS,5:z,5:zOOQ[1G/m1G/mOOQS7+&V7+&VO-`Q`O7+&VOCxQ!fO'#EsO&lQdO'#EsOEPQdO7+%mOOQO7+%m7+%mOOQO1G0z1G0zOEdQ!bO<<IOOElQdO'#EqOEvQ`O,5;yOOQP1G/u1G/uOOQS-E8j-E8jOFOQdO'#EpOFYQ`O,5;rOOQ]1G.x1G.xOOQP<<IO<<IOOFbQdO7+$|OOQO'#D]'#D]OFiQ!bO7+%QOFqQhO'#EoOF{Q`O,5;xO&lQdO,5;xOOQW1G/o1G/oOOQO'#ES'#ESOGTQ`O1G0WOOQS<<I[<<I[O&lQdO,59tOGnQhO1G/_OOQ[1G/_1G/_OGuQ`O1G/_OOQW-E8l-E8lOOQ[7+%]7+%]OOQO,5:{,5:{O=pQdO'#ExOCeQ`O,5;cOOQS,5;c,5;cOOQS-E8u-E8uOOQS1G0f1G0fOOQS<<Iq<<IqOG}Q!fO,5;_OOQS-E8q-E8qOOQO<<IX<<IXOOQPAN>jAN>jOIUQaO,5;]OOQO-E8o-E8oOI`QdO,5;[OOQO-E8n-E8nOOQW<<Hh<<HhOOQW<<Hl<<HlOIjQhO<<HlOI{QhO,5;ZOJWQ`O,5;ZOOQO-E8m-E8mOJ]QdO1G1dOBZQdO'#EuOJgQ`O7+%rOOQW7+%r7+%rOJoQ!bO1G/`OOQ[7+$y7+$yOJzQhO7+$yPKRQ`O'#EnOOQO,5;d,5;dOOQO-E8v-E8vOOQS1G0}1G0}OKWQ`OAN>WO&lQdO1G0uOK]Q`O7+'OOOQO,5;a,5;aOOQO-E8s-E8sOOQW<<I^<<I^OOQ[<<He<<HePOQW,5;Y,5;YOOQWG23rG23rOKeQdO7+&a",
     stateData: "Kx~O#sOS#tQQ~OW[OZ[O]TO`VOaVOi]OjWOmXO!jYO!mZO!saO!ybO!{cO!}dO#QeO#WfO#YgO#oRO~OQiOW[OZ[O]TO`VOaVOi]OjWOmXO!jYO!mZO!saO!ybO!{cO!}dO#QeO#WfO#YgO#ohO~O#m$SP~P!dO#tmO~O#ooO~O]qO`rOarOjsOmtO!juO!mwO#nvO~OpzO!^xO~P$SOc!QO#o|O#p}O~O#o!RO~O#o!TO~OW[OZ[O]TO`VOaVOjWOmXO!jYO!mZO#oRO~OS!]Oe!YO!V![O!Y!`O#q!XOp$TP~Ok$TP~P&POQ!jOe!cOm!dOp!eOr!mOt!mOz!kO!`!lO#o!bO#p!hO#}!fO~Ot!qO!`!lO#o!pO~Ot!sO#o!sO~OS!]Oe!YO!V![O!Y!`O#q!XO~Oe!vOpzO#Z!xO~O]YX`YX`!pXaYXjYXmYXpYX!^YX!jYX!mYX#nYX~O`!zO~Ok!{O#m$SXo$SX~O#m$SXo$SX~P!dO#u#OO#v#OO#w#QO~Oc#UO#o|O#p}O~OpzO!^xO~Oo$SP~P!dOe#`O~Oe#aO~Ol#bO!h#cO~O]qO`rOarOjsOmtO~Op!ia!^!ia!j!ia!m!ia#n!iad!ia~P*zOp!la!^!la!j!la!m!la#n!lad!la~P*zOR#gOS!]Oe!YOr#gOt#gO!V![O!Y!`O#q#dO#}!fO~O!R#iO!^#jOk$TXp$TX~Oe#mO~Ok#oOpzO~Oe!vO~O]#rO`#rOd#uOi#rOj#rOk#rO~P&lO]#rO`#rOi#rOj#rOk#rOl#wO~P&lO]#rO`#rOi#rOj#rOk#rOo#yO~P&lOP#zOSsXesXksXvsX!VsX!YsX!usX!wsX#qsX!TsXQsX]sX`sXdsXisXjsXmsXpsXrsXtsXzsX!`sX#osX#psX#}sXlsXosX!^sX!qsX#msX~Ov#{O!u#|O!w#}Ok$TP~P'tOe#aOS#{Xk#{Xv#{X!V#{X!Y#{X!u#{X!w#{X#q#{XQ#{X]#{X`#{Xd#{Xi#{Xj#{Xm#{Xp#{Xr#{Xt#{Xz#{X!`#{X#o#{X#p#{X#}#{Xl#{Xo#{X!^#{X!q#{X#m#{X~Oe$RO~Oe$TO~Ok$VOv#{O~Ok$WO~Ot$XO!`!lO~Op$YO~OpzO!R#iO~OpzO#Z$`O~O!q$bOk!oa#m!oao!oa~P&lOk#hX#m#hXo#hX~P!dOk!{O#m$Sao$Sa~O#u#OO#v#OO#w$hO~Ol$jO!h$kO~Op!ii!^!ii!j!ii!m!ii#n!iid!ii~P*zOp!ki!^!ki!j!ki!m!ki#n!kid!ki~P*zOp!li!^!li!j!li!m!li#n!lid!li~P*zOp#fa!^#fa~P$SOo$lO~Od$RP~P%_Od#zP~P&lO`!PXd}X!R}X!T!PX~O`$sO!T$tO~Od$uO!R#iO~Ok#jXp#jX!^#jX~P'tO!^#jOk$Tap$Ta~O!R#iOk!Uap!Ua!^!Uad!Ua`!Ua~OS!]Oe!YO!V![O!Y!`O#q$yO~Od$QP~P9dOv#{OQ#|X]#|X`#|Xd#|Xe#|Xi#|Xj#|Xk#|Xm#|Xp#|Xr#|Xt#|Xz#|X!`#|X#o#|X#p#|X#}#|Xl#|Xo#|X~O]#rO`#rOd%OOi#rOj#rOk#rO~P&lO]#rO`#rOi#rOj#rOk#rOl%PO~P&lO]#rO`#rOi#rOj#rOk#rOo%QO~P&lOe%SOS!tXk!tX!V!tX!Y!tX#q!tX~Ok%TO~Od%YOt%ZO!a%ZO~Ok%[O~Oo%cO#o%^O#}%]O~Od%dO~P$SOv#{O!^%hO!q%jOk!oi#m!oio!oi~P&lOk#ha#m#hao#ha~P!dOk!{O#m$Sio$Si~O!^%mOd$RX~P$SOd%oO~Ov#{OQ#`Xd#`Xe#`Xm#`Xp#`Xr#`Xt#`Xz#`X!^#`X!`#`X#o#`X#p#`X#}#`X~O!^%qOd#zX~P&lOd%sO~Ol%tOv#{O~OR#gOr#gOt#gO#q%vO#}!fO~O!R#iOk#jap#ja!^#ja~O`!PXd}X!R}X!^}X~O!R#iO!^%xOd$QX~O`%zO~Od%{O~O#o%|O~Ok&OO~O`&PO!R#iO~Od&ROk&QO~Od&UO~OP#zOpsX!^sXdsX~O#}%]Op#TX!^#TX~OpzO!^&WO~Oo&[O#o%^O#}%]O~Ov#{OQ#gXe#gXk#gXm#gXp#gXr#gXt#gXz#gX!^#gX!`#gX!q#gX#m#gX#o#gX#p#gX#}#gXo#gX~O!^%hO!q&`Ok!oq#m!oqo!oq~P&lOl&aOv#{O~Od#eX!^#eX~P%_O!^%mOd$Ra~Od#dX!^#dX~P&lO!^%qOd#za~Od&fO~P&lOd&gO!T&hO~Od#cX!^#cX~P9dO!^%xOd$Qa~O]&mOd&oO~OS#bae#ba!V#ba!Y#ba#q#ba~Od&qO~PG]Od&qOk&rO~Ov#{OQ#gae#gak#gam#gap#gar#gat#gaz#ga!^#ga!`#ga!q#ga#m#ga#o#ga#p#ga#}#gao#ga~Od#ea!^#ea~P$SOd#da!^#da~P&lOR#gOr#gOt#gO#q%vO#}%]O~O!R#iOd#ca!^#ca~O`&xO~O!^%xOd$Qi~P&lO]&mOd&|O~Ov#{Od|ik|i~Od&}O~PG]Ok'OO~Od'PO~O!^%xOd$Qq~Od#cq!^#cq~P&lO#s!a#t#}]#}v!m~",
@@ -28620,7 +28832,7 @@
   */
   const cssLanguage = /*@__PURE__*/LRLanguage.define({
       name: "css",
-      parser: /*@__PURE__*/parser.configure({
+      parser: /*@__PURE__*/parser$3.configure({
           props: [
               /*@__PURE__*/indentNodeProp.add({
                   Declaration: /*@__PURE__*/continuedIndent()
@@ -28994,14 +29206,14 @@
       }
   }
   Schema.default = /*@__PURE__*/new Schema;
-  function elementName(doc, tree, max = doc.length) {
+  function elementName$2(doc, tree, max = doc.length) {
       if (!tree)
           return "";
       let tag = tree.firstChild;
       let name = tag && tag.getChild("TagName");
       return name ? doc.sliceString(name.from, Math.min(name.to, max)) : "";
   }
-  function findParentElement(tree, skip = false) {
+  function findParentElement$1(tree, skip = false) {
       for (; tree; tree = tree.parent)
           if (tree.name == "Element") {
               if (skip)
@@ -29012,13 +29224,13 @@
       return null;
   }
   function allowedChildren(doc, tree, schema) {
-      let parentInfo = schema.tags[elementName(doc, findParentElement(tree))];
+      let parentInfo = schema.tags[elementName$2(doc, findParentElement$1(tree))];
       return (parentInfo === null || parentInfo === void 0 ? void 0 : parentInfo.children) || schema.allTags;
   }
   function openTags(doc, tree) {
       let open = [];
-      for (let parent = findParentElement(tree); parent && !parent.type.isTop; parent = findParentElement(parent.parent)) {
-          let tagName = elementName(doc, parent);
+      for (let parent = findParentElement$1(tree); parent && !parent.type.isTop; parent = findParentElement$1(parent.parent)) {
+          let tagName = elementName$2(doc, parent);
           if (tagName && parent.lastChild.name == "CloseTag")
               break;
           if (tagName && open.indexOf(tagName) < 0 && (tree.name == "EndTag" || tree.from >= parent.firstChild.to))
@@ -29029,7 +29241,7 @@
   const identifier = /^[:\-\.\w\u00b7-\uffff]*$/;
   function completeTag(state, schema, tree, from, to) {
       let end = /\s*>/.test(state.sliceDoc(to, to + 5)) ? "" : ">";
-      let parent = findParentElement(tree, true);
+      let parent = findParentElement$1(tree, true);
       return { from, to,
           options: allowedChildren(state.doc, parent, schema).map(tagName => ({ label: tagName, type: "type" })).concat(openTags(state.doc, tree).map((tag, i) => ({ label: "/" + tag, apply: "/" + tag + end,
               type: "type", boost: 99 - i }))),
@@ -29050,7 +29262,7 @@
       return { from: pos, to: pos, options, validFor: /^<\/?[:\-\.\w\u00b7-\uffff]*$/ };
   }
   function completeAttrName(state, schema, tree, from, to) {
-      let elt = findParentElement(tree), info = elt ? schema.tags[elementName(state.doc, elt)] : null;
+      let elt = findParentElement$1(tree), info = elt ? schema.tags[elementName$2(state.doc, elt)] : null;
       let localAttrs = info && info.attrs ? Object.keys(info.attrs) : [];
       let names = info && info.globalAttrs === false ? localAttrs
           : localAttrs.length ? localAttrs.concat(schema.globalAttrNames) : schema.globalAttrNames;
@@ -29066,7 +29278,7 @@
           let attrName = state.sliceDoc(nameNode.from, nameNode.to);
           let attrs = schema.globalAttrs[attrName];
           if (!attrs) {
-              let elt = findParentElement(tree), info = elt ? schema.tags[elementName(state.doc, elt)] : null;
+              let elt = findParentElement$1(tree), info = elt ? schema.tags[elementName$2(state.doc, elt)] : null;
               attrs = (info === null || info === void 0 ? void 0 : info.attrs) && info.attrs[attrName];
           }
           if (attrs) {
@@ -29120,6 +29332,13 @@
       }
   }
   /**
+  HTML tag completion. Opens and closes tags and attributes in a
+  context-aware way.
+  */
+  function htmlCompletionSource(context) {
+      return htmlCompletionFor(Schema.default, context);
+  }
+  /**
   Create a completion source for HTML extended with additional tags
   or attributes.
   */
@@ -29162,7 +29381,7 @@
   ].concat(/*@__PURE__*/eventAttributes.map(name => ({ name, parser: javascriptLanguage.parser })));
   const htmlPlain = /*@__PURE__*/LRLanguage.define({
       name: "html",
-      parser: /*@__PURE__*/parser$1.configure({
+      parser: /*@__PURE__*/parser$4.configure({
           props: [
               /*@__PURE__*/indentNodeProp.add({
                   Element(context) {
@@ -29234,7 +29453,7 @@
       let lang = wrap ? htmlPlain.configure({ wrap, dialect }) : dialect ? htmlLanguage.configure({ dialect }) : htmlLanguage;
       return new LanguageSupport(lang, [
           htmlLanguage.data.of({ autocomplete: htmlCompletionSourceWith(config) }),
-          config.autoCloseTags !== false ? autoCloseTags : [],
+          config.autoCloseTags !== false ? autoCloseTags$1 : [],
           javascript().support,
           css().support
       ]);
@@ -29244,7 +29463,7 @@
   Extension that will automatically insert close tags when a `>` or
   `/` is typed.
   */
-  const autoCloseTags = /*@__PURE__*/EditorView.inputHandler.of((view, from, to, text, insertTransaction) => {
+  const autoCloseTags$1 = /*@__PURE__*/EditorView.inputHandler.of((view, from, to, text, insertTransaction) => {
       if (view.composing || view.state.readOnly || from != to || (text != ">" && text != "/") ||
           !htmlLanguage.isActiveAt(view.state, from, -1))
           return false;
@@ -29256,7 +29475,7 @@
           if (didType && text == ">" && after.name == "EndTag") {
               let tag = after.parent;
               if (((_b = (_a = tag.parent) === null || _a === void 0 ? void 0 : _a.lastChild) === null || _b === void 0 ? void 0 : _b.name) != "CloseTag" &&
-                  (name = elementName(state.doc, tag.parent, head)) &&
+                  (name = elementName$2(state.doc, tag.parent, head)) &&
                   !selfClosers.has(name)) {
                   let to = head + (state.doc.sliceString(head, head + 1) === ">" ? 1 : 0);
                   let insert = `</${name}>`;
@@ -29266,7 +29485,7 @@
           else if (didType && text == "/" && after.name == "IncompleteCloseTag") {
               let tag = after.parent;
               if (after.from == head - 2 && ((_c = tag.lastChild) === null || _c === void 0 ? void 0 : _c.name) != "CloseTag" &&
-                  (name = elementName(state.doc, tag, head)) && !selfClosers.has(name)) {
+                  (name = elementName$2(state.doc, tag, head)) && !selfClosers.has(name)) {
                   let to = head + (state.doc.sliceString(head, head + 1) === ">" ? 1 : 0);
                   let insert = `${name}>`;
                   return {
@@ -29289,113 +29508,3277 @@
       return true;
   });
 
-  // Using https://github.com/one-dark/vscode-one-dark-theme/ as reference for the colors
-  const chalky = "#e5c07b", coral = "#e06c75", cyan = "#56b6c2", invalid = "#ffffff", ivory = "#abb2bf", stone = "#7d8799", // Brightened compared to original to increase contrast
-  malibu = "#61afef", sage = "#98c379", whiskey = "#d19a66", violet = "#c678dd", darkBackground = "#21252b", highlightBackground = "#2c313a", background = "#282c34", tooltipBackground = "#353a42", selection = "#3E4451", cursor = "#528bff";
+  const jsonHighlighting = styleTags({
+    String: tags$1.string,
+    Number: tags$1.number,
+    "True False": tags$1.bool,
+    PropertyName: tags$1.propertyName,
+    Null: tags$1.null,
+    ", :": tags$1.separator,
+    "[ ]": tags$1.squareBracket,
+    "{ }": tags$1.brace
+  });
+
+  // This file was generated by lezer-generator. You probably shouldn't edit it.
+  const parser$2 = LRParser.deserialize({
+    version: 14,
+    states: "$bOVQPOOOOQO'#Cb'#CbOnQPO'#CeOvQPO'#ClOOQO'#Cr'#CrQOQPOOOOQO'#Cg'#CgO}QPO'#CfO!SQPO'#CtOOQO,59P,59PO![QPO,59PO!aQPO'#CuOOQO,59W,59WO!iQPO,59WOVQPO,59QOqQPO'#CmO!nQPO,59`OOQO1G.k1G.kOVQPO'#CnO!vQPO,59aOOQO1G.r1G.rOOQO1G.l1G.lOOQO,59X,59XOOQO-E6k-E6kOOQO,59Y,59YOOQO-E6l-E6l",
+    stateData: "#O~OeOS~OQSORSOSSOTSOWQO_ROgPO~OVXOgUO~O^[O~PVO[^O~O]_OVhX~OVaO~O]bO^iX~O^dO~O]_OVha~O]bO^ia~O",
+    goto: "!kjPPPPPPkPPkqwPPPPk{!RPPP!XP!e!hXSOR^bQWQRf_TVQ_Q`WRg`QcZRicQTOQZRQe^RhbRYQR]R",
+    nodeNames: "⚠ JsonText True False Null Number String } { Object Property PropertyName : , ] [ Array",
+    maxTerm: 25,
+    nodeProps: [
+      ["isolate", -2,6,11,""],
+      ["openedBy", 7,"{",14,"["],
+      ["closedBy", 8,"}",15,"]"]
+    ],
+    propSources: [jsonHighlighting],
+    skippedNodes: [0],
+    repeatNodeCount: 2,
+    tokenData: "(|~RaXY!WYZ!W]^!Wpq!Wrs!]|}$u}!O$z!Q!R%T!R![&c![!]&t!}#O&y#P#Q'O#Y#Z'T#b#c'r#h#i(Z#o#p(r#q#r(w~!]Oe~~!`Wpq!]qr!]rs!xs#O!]#O#P!}#P;'S!];'S;=`$o<%lO!]~!}Og~~#QXrs!]!P!Q!]#O#P!]#U#V!]#Y#Z!]#b#c!]#f#g!]#h#i!]#i#j#m~#pR!Q![#y!c!i#y#T#Z#y~#|R!Q![$V!c!i$V#T#Z$V~$YR!Q![$c!c!i$c#T#Z$c~$fR!Q![!]!c!i!]#T#Z!]~$rP;=`<%l!]~$zO]~~$}Q!Q!R%T!R![&c~%YRT~!O!P%c!g!h%w#X#Y%w~%fP!Q![%i~%nRT~!Q![%i!g!h%w#X#Y%w~%zR{|&T}!O&T!Q![&Z~&WP!Q![&Z~&`PT~!Q![&Z~&hST~!O!P%c!Q![&c!g!h%w#X#Y%w~&yO[~~'OO_~~'TO^~~'WP#T#U'Z~'^P#`#a'a~'dP#g#h'g~'jP#X#Y'm~'rOR~~'uP#i#j'x~'{P#`#a(O~(RP#`#a(U~(ZOS~~(^P#f#g(a~(dP#i#j(g~(jP#X#Y(m~(rOQ~~(wOW~~(|OV~",
+    tokenizers: [0],
+    topRules: {"JsonText":[0,1]},
+    tokenPrec: 0
+  });
+
   /**
-  The editor theme styles for One Dark.
+  A language provider that provides JSON parsing.
   */
-  const oneDarkTheme = /*@__PURE__*/EditorView.theme({
-      "&": {
-          color: ivory,
-          backgroundColor: background
+  const jsonLanguage = /*@__PURE__*/LRLanguage.define({
+      name: "json",
+      parser: /*@__PURE__*/parser$2.configure({
+          props: [
+              /*@__PURE__*/indentNodeProp.add({
+                  Object: /*@__PURE__*/continuedIndent({ except: /^\s*\}/ }),
+                  Array: /*@__PURE__*/continuedIndent({ except: /^\s*\]/ })
+              }),
+              /*@__PURE__*/foldNodeProp.add({
+                  "Object Array": foldInside
+              })
+          ]
+      }),
+      languageData: {
+          closeBrackets: { brackets: ["[", "{", '"'] },
+          indentOnInput: /^\s*[\}\]]$/
+      }
+  });
+  /**
+  JSON language support.
+  */
+  function json() {
+      return new LanguageSupport(jsonLanguage);
+  }
+
+  class CompositeBlock {
+      static create(type, value, from, parentHash, end) {
+          let hash = (parentHash + (parentHash << 8) + type + (value << 4)) | 0;
+          return new CompositeBlock(type, value, from, hash, end, [], []);
+      }
+      constructor(type, 
+      // Used for indentation in list items, markup character in lists
+      value, from, hash, end, children, positions) {
+          this.type = type;
+          this.value = value;
+          this.from = from;
+          this.hash = hash;
+          this.end = end;
+          this.children = children;
+          this.positions = positions;
+          this.hashProp = [[NodeProp.contextHash, hash]];
+      }
+      addChild(child, pos) {
+          if (child.prop(NodeProp.contextHash) != this.hash)
+              child = new Tree(child.type, child.children, child.positions, child.length, this.hashProp);
+          this.children.push(child);
+          this.positions.push(pos);
+      }
+      toTree(nodeSet, end = this.end) {
+          let last = this.children.length - 1;
+          if (last >= 0)
+              end = Math.max(end, this.positions[last] + this.children[last].length + this.from);
+          return new Tree(nodeSet.types[this.type], this.children, this.positions, end - this.from).balance({
+              makeTree: (children, positions, length) => new Tree(NodeType.none, children, positions, length, this.hashProp)
+          });
+      }
+  }
+  var Type;
+  (function (Type) {
+      Type[Type["Document"] = 1] = "Document";
+      Type[Type["CodeBlock"] = 2] = "CodeBlock";
+      Type[Type["FencedCode"] = 3] = "FencedCode";
+      Type[Type["Blockquote"] = 4] = "Blockquote";
+      Type[Type["HorizontalRule"] = 5] = "HorizontalRule";
+      Type[Type["BulletList"] = 6] = "BulletList";
+      Type[Type["OrderedList"] = 7] = "OrderedList";
+      Type[Type["ListItem"] = 8] = "ListItem";
+      Type[Type["ATXHeading1"] = 9] = "ATXHeading1";
+      Type[Type["ATXHeading2"] = 10] = "ATXHeading2";
+      Type[Type["ATXHeading3"] = 11] = "ATXHeading3";
+      Type[Type["ATXHeading4"] = 12] = "ATXHeading4";
+      Type[Type["ATXHeading5"] = 13] = "ATXHeading5";
+      Type[Type["ATXHeading6"] = 14] = "ATXHeading6";
+      Type[Type["SetextHeading1"] = 15] = "SetextHeading1";
+      Type[Type["SetextHeading2"] = 16] = "SetextHeading2";
+      Type[Type["HTMLBlock"] = 17] = "HTMLBlock";
+      Type[Type["LinkReference"] = 18] = "LinkReference";
+      Type[Type["Paragraph"] = 19] = "Paragraph";
+      Type[Type["CommentBlock"] = 20] = "CommentBlock";
+      Type[Type["ProcessingInstructionBlock"] = 21] = "ProcessingInstructionBlock";
+      // Inline
+      Type[Type["Escape"] = 22] = "Escape";
+      Type[Type["Entity"] = 23] = "Entity";
+      Type[Type["HardBreak"] = 24] = "HardBreak";
+      Type[Type["Emphasis"] = 25] = "Emphasis";
+      Type[Type["StrongEmphasis"] = 26] = "StrongEmphasis";
+      Type[Type["Link"] = 27] = "Link";
+      Type[Type["Image"] = 28] = "Image";
+      Type[Type["InlineCode"] = 29] = "InlineCode";
+      Type[Type["HTMLTag"] = 30] = "HTMLTag";
+      Type[Type["Comment"] = 31] = "Comment";
+      Type[Type["ProcessingInstruction"] = 32] = "ProcessingInstruction";
+      Type[Type["Autolink"] = 33] = "Autolink";
+      // Smaller tokens
+      Type[Type["HeaderMark"] = 34] = "HeaderMark";
+      Type[Type["QuoteMark"] = 35] = "QuoteMark";
+      Type[Type["ListMark"] = 36] = "ListMark";
+      Type[Type["LinkMark"] = 37] = "LinkMark";
+      Type[Type["EmphasisMark"] = 38] = "EmphasisMark";
+      Type[Type["CodeMark"] = 39] = "CodeMark";
+      Type[Type["CodeText"] = 40] = "CodeText";
+      Type[Type["CodeInfo"] = 41] = "CodeInfo";
+      Type[Type["LinkTitle"] = 42] = "LinkTitle";
+      Type[Type["LinkLabel"] = 43] = "LinkLabel";
+      Type[Type["URL"] = 44] = "URL";
+  })(Type || (Type = {}));
+  /**
+  Data structure used to accumulate a block's content during [leaf
+  block parsing](#BlockParser.leaf).
+  */
+  class LeafBlock {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The start position of the block.
+      */
+      start, 
+      /**
+      The block's text content.
+      */
+      content) {
+          this.start = start;
+          this.content = content;
+          /**
+          @internal
+          */
+          this.marks = [];
+          /**
+          The block parsers active for this block.
+          */
+          this.parsers = [];
+      }
+  }
+  /**
+  Data structure used during block-level per-line parsing.
+  */
+  class Line {
+      constructor() {
+          /**
+          The line's full text.
+          */
+          this.text = "";
+          /**
+          The base indent provided by the composite contexts (that have
+          been handled so far).
+          */
+          this.baseIndent = 0;
+          /**
+          The string position corresponding to the base indent.
+          */
+          this.basePos = 0;
+          /**
+          The number of contexts handled @internal
+          */
+          this.depth = 0;
+          /**
+          Any markers (i.e. block quote markers) parsed for the contexts. @internal
+          */
+          this.markers = [];
+          /**
+          The position of the next non-whitespace character beyond any
+          list, blockquote, or other composite block markers.
+          */
+          this.pos = 0;
+          /**
+          The column of the next non-whitespace character.
+          */
+          this.indent = 0;
+          /**
+          The character code of the character after `pos`.
+          */
+          this.next = -1;
+      }
+      /**
+      @internal
+      */
+      forward() {
+          if (this.basePos > this.pos)
+              this.forwardInner();
+      }
+      /**
+      @internal
+      */
+      forwardInner() {
+          let newPos = this.skipSpace(this.basePos);
+          this.indent = this.countIndent(newPos, this.pos, this.indent);
+          this.pos = newPos;
+          this.next = newPos == this.text.length ? -1 : this.text.charCodeAt(newPos);
+      }
+      /**
+      Skip whitespace after the given position, return the position of
+      the next non-space character or the end of the line if there's
+      only space after `from`.
+      */
+      skipSpace(from) { return skipSpace(this.text, from); }
+      /**
+      @internal
+      */
+      reset(text) {
+          this.text = text;
+          this.baseIndent = this.basePos = this.pos = this.indent = 0;
+          this.forwardInner();
+          this.depth = 1;
+          while (this.markers.length)
+              this.markers.pop();
+      }
+      /**
+      Move the line's base position forward to the given position.
+      This should only be called by composite [block
+      parsers](#BlockParser.parse) or [markup skipping
+      functions](#NodeSpec.composite).
+      */
+      moveBase(to) {
+          this.basePos = to;
+          this.baseIndent = this.countIndent(to, this.pos, this.indent);
+      }
+      /**
+      Move the line's base position forward to the given _column_.
+      */
+      moveBaseColumn(indent) {
+          this.baseIndent = indent;
+          this.basePos = this.findColumn(indent);
+      }
+      /**
+      Store a composite-block-level marker. Should be called from
+      [markup skipping functions](#NodeSpec.composite) when they
+      consume any non-whitespace characters.
+      */
+      addMarker(elt) {
+          this.markers.push(elt);
+      }
+      /**
+      Find the column position at `to`, optionally starting at a given
+      position and column.
+      */
+      countIndent(to, from = 0, indent = 0) {
+          for (let i = from; i < to; i++)
+              indent += this.text.charCodeAt(i) == 9 ? 4 - indent % 4 : 1;
+          return indent;
+      }
+      /**
+      Find the position corresponding to the given column.
+      */
+      findColumn(goal) {
+          let i = 0;
+          for (let indent = 0; i < this.text.length && indent < goal; i++)
+              indent += this.text.charCodeAt(i) == 9 ? 4 - indent % 4 : 1;
+          return i;
+      }
+      /**
+      @internal
+      */
+      scrub() {
+          if (!this.baseIndent)
+              return this.text;
+          let result = "";
+          for (let i = 0; i < this.basePos; i++)
+              result += " ";
+          return result + this.text.slice(this.basePos);
+      }
+  }
+  function skipForList(bl, cx, line) {
+      if (line.pos == line.text.length ||
+          (bl != cx.block && line.indent >= cx.stack[line.depth + 1].value + line.baseIndent))
+          return true;
+      if (line.indent >= line.baseIndent + 4)
+          return false;
+      let size = (bl.type == Type.OrderedList ? isOrderedList : isBulletList)(line, cx, false);
+      return size > 0 &&
+          (bl.type != Type.BulletList || isHorizontalRule(line, cx, false) < 0) &&
+          line.text.charCodeAt(line.pos + size - 1) == bl.value;
+  }
+  const DefaultSkipMarkup = {
+      [Type.Blockquote](bl, cx, line) {
+          if (line.next != 62 /* '>' */)
+              return false;
+          line.markers.push(elt(Type.QuoteMark, cx.lineStart + line.pos, cx.lineStart + line.pos + 1));
+          line.moveBase(line.pos + (space(line.text.charCodeAt(line.pos + 1)) ? 2 : 1));
+          bl.end = cx.lineStart + line.text.length;
+          return true;
       },
-      ".cm-content": {
-          caretColor: cursor
+      [Type.ListItem](bl, _cx, line) {
+          if (line.indent < line.baseIndent + bl.value && line.next > -1)
+              return false;
+          line.moveBaseColumn(line.baseIndent + bl.value);
+          return true;
       },
-      ".cm-cursor, .cm-dropCursor": { borderLeftColor: cursor },
-      "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: selection },
-      ".cm-panels": { backgroundColor: darkBackground, color: ivory },
-      ".cm-panels.cm-panels-top": { borderBottom: "2px solid black" },
-      ".cm-panels.cm-panels-bottom": { borderTop: "2px solid black" },
-      ".cm-searchMatch": {
-          backgroundColor: "#72a1ff59",
-          outline: "1px solid #457dff"
+      [Type.OrderedList]: skipForList,
+      [Type.BulletList]: skipForList,
+      [Type.Document]() { return true; }
+  };
+  function space(ch) { return ch == 32 || ch == 9 || ch == 10 || ch == 13; }
+  function skipSpace(line, i = 0) {
+      while (i < line.length && space(line.charCodeAt(i)))
+          i++;
+      return i;
+  }
+  function skipSpaceBack(line, i, to) {
+      while (i > to && space(line.charCodeAt(i - 1)))
+          i--;
+      return i;
+  }
+  function isFencedCode(line) {
+      if (line.next != 96 && line.next != 126 /* '`~' */)
+          return -1;
+      let pos = line.pos + 1;
+      while (pos < line.text.length && line.text.charCodeAt(pos) == line.next)
+          pos++;
+      if (pos < line.pos + 3)
+          return -1;
+      if (line.next == 96)
+          for (let i = pos; i < line.text.length; i++)
+              if (line.text.charCodeAt(i) == 96)
+                  return -1;
+      return pos;
+  }
+  function isBlockquote(line) {
+      return line.next != 62 /* '>' */ ? -1 : line.text.charCodeAt(line.pos + 1) == 32 ? 2 : 1;
+  }
+  function isHorizontalRule(line, cx, breaking) {
+      if (line.next != 42 && line.next != 45 && line.next != 95 /* '_-*' */)
+          return -1;
+      let count = 1;
+      for (let pos = line.pos + 1; pos < line.text.length; pos++) {
+          let ch = line.text.charCodeAt(pos);
+          if (ch == line.next)
+              count++;
+          else if (!space(ch))
+              return -1;
+      }
+      // Setext headers take precedence
+      if (breaking && line.next == 45 && isSetextUnderline(line) > -1 && line.depth == cx.stack.length &&
+          cx.parser.leafBlockParsers.indexOf(DefaultLeafBlocks.SetextHeading) > -1)
+          return -1;
+      return count < 3 ? -1 : 1;
+  }
+  function inList(cx, type) {
+      for (let i = cx.stack.length - 1; i >= 0; i--)
+          if (cx.stack[i].type == type)
+              return true;
+      return false;
+  }
+  function isBulletList(line, cx, breaking) {
+      return (line.next == 45 || line.next == 43 || line.next == 42 /* '-+*' */) &&
+          (line.pos == line.text.length - 1 || space(line.text.charCodeAt(line.pos + 1))) &&
+          (!breaking || inList(cx, Type.BulletList) || line.skipSpace(line.pos + 2) < line.text.length) ? 1 : -1;
+  }
+  function isOrderedList(line, cx, breaking) {
+      let pos = line.pos, next = line.next;
+      for (;;) {
+          if (next >= 48 && next <= 57 /* '0-9' */)
+              pos++;
+          else
+              break;
+          if (pos == line.text.length)
+              return -1;
+          next = line.text.charCodeAt(pos);
+      }
+      if (pos == line.pos || pos > line.pos + 9 ||
+          (next != 46 && next != 41 /* '.)' */) ||
+          (pos < line.text.length - 1 && !space(line.text.charCodeAt(pos + 1))) ||
+          breaking && !inList(cx, Type.OrderedList) &&
+              (line.skipSpace(pos + 1) == line.text.length || pos > line.pos + 1 || line.next != 49 /* '1' */))
+          return -1;
+      return pos + 1 - line.pos;
+  }
+  function isAtxHeading(line) {
+      if (line.next != 35 /* '#' */)
+          return -1;
+      let pos = line.pos + 1;
+      while (pos < line.text.length && line.text.charCodeAt(pos) == 35)
+          pos++;
+      if (pos < line.text.length && line.text.charCodeAt(pos) != 32)
+          return -1;
+      let size = pos - line.pos;
+      return size > 6 ? -1 : size;
+  }
+  function isSetextUnderline(line) {
+      if (line.next != 45 && line.next != 61 /* '-=' */ || line.indent >= line.baseIndent + 4)
+          return -1;
+      let pos = line.pos + 1;
+      while (pos < line.text.length && line.text.charCodeAt(pos) == line.next)
+          pos++;
+      let end = pos;
+      while (pos < line.text.length && space(line.text.charCodeAt(pos)))
+          pos++;
+      return pos == line.text.length ? end : -1;
+  }
+  const EmptyLine = /^[ \t]*$/, CommentEnd = /-->/, ProcessingEnd = /\?>/;
+  const HTMLBlockStyle = [
+      [/^<(?:script|pre|style)(?:\s|>|$)/i, /<\/(?:script|pre|style)>/i],
+      [/^\s*<!--/, CommentEnd],
+      [/^\s*<\?/, ProcessingEnd],
+      [/^\s*<![A-Z]/, />/],
+      [/^\s*<!\[CDATA\[/, /\]\]>/],
+      [/^\s*<\/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|\/?>|$)/i, EmptyLine],
+      [/^\s*(?:<\/[a-z][\w-]*\s*>|<[a-z][\w-]*(\s+[a-z:_][\w-.]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*>)\s*$/i, EmptyLine]
+  ];
+  function isHTMLBlock(line, _cx, breaking) {
+      if (line.next != 60 /* '<' */)
+          return -1;
+      let rest = line.text.slice(line.pos);
+      for (let i = 0, e = HTMLBlockStyle.length - (breaking ? 1 : 0); i < e; i++)
+          if (HTMLBlockStyle[i][0].test(rest))
+              return i;
+      return -1;
+  }
+  function getListIndent(line, pos) {
+      let indentAfter = line.countIndent(pos, line.pos, line.indent);
+      let indented = line.countIndent(line.skipSpace(pos), pos, indentAfter);
+      return indented >= indentAfter + 5 ? indentAfter + 1 : indented;
+  }
+  function addCodeText(marks, from, to) {
+      let last = marks.length - 1;
+      if (last >= 0 && marks[last].to == from && marks[last].type == Type.CodeText)
+          marks[last].to = to;
+      else
+          marks.push(elt(Type.CodeText, from, to));
+  }
+  // Rules for parsing blocks. A return value of false means the rule
+  // doesn't apply here, true means it does. When true is returned and
+  // `p.line` has been updated, the rule is assumed to have consumed a
+  // leaf block. Otherwise, it is assumed to have opened a context.
+  const DefaultBlockParsers = {
+      LinkReference: undefined,
+      IndentedCode(cx, line) {
+          let base = line.baseIndent + 4;
+          if (line.indent < base)
+              return false;
+          let start = line.findColumn(base);
+          let from = cx.lineStart + start, to = cx.lineStart + line.text.length;
+          let marks = [], pendingMarks = [];
+          addCodeText(marks, from, to);
+          while (cx.nextLine() && line.depth >= cx.stack.length) {
+              if (line.pos == line.text.length) { // Empty
+                  addCodeText(pendingMarks, cx.lineStart - 1, cx.lineStart);
+                  for (let m of line.markers)
+                      pendingMarks.push(m);
+              }
+              else if (line.indent < base) {
+                  break;
+              }
+              else {
+                  if (pendingMarks.length) {
+                      for (let m of pendingMarks) {
+                          if (m.type == Type.CodeText)
+                              addCodeText(marks, m.from, m.to);
+                          else
+                              marks.push(m);
+                      }
+                      pendingMarks = [];
+                  }
+                  addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+                  for (let m of line.markers)
+                      marks.push(m);
+                  to = cx.lineStart + line.text.length;
+                  let codeStart = cx.lineStart + line.findColumn(line.baseIndent + 4);
+                  if (codeStart < to)
+                      addCodeText(marks, codeStart, to);
+              }
+          }
+          if (pendingMarks.length) {
+              pendingMarks = pendingMarks.filter(m => m.type != Type.CodeText);
+              if (pendingMarks.length)
+                  line.markers = pendingMarks.concat(line.markers);
+          }
+          cx.addNode(cx.buffer.writeElements(marks, -from).finish(Type.CodeBlock, to - from), from);
+          return true;
       },
-      ".cm-searchMatch.cm-searchMatch-selected": {
-          backgroundColor: "#6199ff2f"
+      FencedCode(cx, line) {
+          let fenceEnd = isFencedCode(line);
+          if (fenceEnd < 0)
+              return false;
+          let from = cx.lineStart + line.pos, ch = line.next, len = fenceEnd - line.pos;
+          let infoFrom = line.skipSpace(fenceEnd), infoTo = skipSpaceBack(line.text, line.text.length, infoFrom);
+          let marks = [elt(Type.CodeMark, from, from + len)];
+          if (infoFrom < infoTo)
+              marks.push(elt(Type.CodeInfo, cx.lineStart + infoFrom, cx.lineStart + infoTo));
+          for (let first = true; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
+              let i = line.pos;
+              if (line.indent - line.baseIndent < 4)
+                  while (i < line.text.length && line.text.charCodeAt(i) == ch)
+                      i++;
+              if (i - line.pos >= len && line.skipSpace(i) == line.text.length) {
+                  for (let m of line.markers)
+                      marks.push(m);
+                  marks.push(elt(Type.CodeMark, cx.lineStart + line.pos, cx.lineStart + i));
+                  cx.nextLine();
+                  break;
+              }
+              else {
+                  if (!first)
+                      addCodeText(marks, cx.lineStart - 1, cx.lineStart);
+                  for (let m of line.markers)
+                      marks.push(m);
+                  let textStart = cx.lineStart + line.basePos, textEnd = cx.lineStart + line.text.length;
+                  if (textStart < textEnd)
+                      addCodeText(marks, textStart, textEnd);
+              }
+          }
+          cx.addNode(cx.buffer.writeElements(marks, -from)
+              .finish(Type.FencedCode, cx.prevLineEnd() - from), from);
+          return true;
       },
-      ".cm-activeLine": { backgroundColor: "#6699ff0b" },
-      ".cm-selectionMatch": { backgroundColor: "#aafe661a" },
-      "&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket": {
-          backgroundColor: "#bad0f847"
+      Blockquote(cx, line) {
+          let size = isBlockquote(line);
+          if (size < 0)
+              return false;
+          cx.startContext(Type.Blockquote, line.pos);
+          cx.addNode(Type.QuoteMark, cx.lineStart + line.pos, cx.lineStart + line.pos + 1);
+          line.moveBase(line.pos + size);
+          return null;
       },
-      ".cm-gutters": {
-          backgroundColor: background,
-          color: stone,
-          border: "none"
+      HorizontalRule(cx, line) {
+          if (isHorizontalRule(line, cx, false) < 0)
+              return false;
+          let from = cx.lineStart + line.pos;
+          cx.nextLine();
+          cx.addNode(Type.HorizontalRule, from);
+          return true;
       },
-      ".cm-activeLineGutter": {
-          backgroundColor: highlightBackground
+      BulletList(cx, line) {
+          let size = isBulletList(line, cx, false);
+          if (size < 0)
+              return false;
+          if (cx.block.type != Type.BulletList)
+              cx.startContext(Type.BulletList, line.basePos, line.next);
+          let newBase = getListIndent(line, line.pos + 1);
+          cx.startContext(Type.ListItem, line.basePos, newBase - line.baseIndent);
+          cx.addNode(Type.ListMark, cx.lineStart + line.pos, cx.lineStart + line.pos + size);
+          line.moveBaseColumn(newBase);
+          return null;
       },
-      ".cm-foldPlaceholder": {
-          backgroundColor: "transparent",
-          border: "none",
-          color: "#ddd"
+      OrderedList(cx, line) {
+          let size = isOrderedList(line, cx, false);
+          if (size < 0)
+              return false;
+          if (cx.block.type != Type.OrderedList)
+              cx.startContext(Type.OrderedList, line.basePos, line.text.charCodeAt(line.pos + size - 1));
+          let newBase = getListIndent(line, line.pos + size);
+          cx.startContext(Type.ListItem, line.basePos, newBase - line.baseIndent);
+          cx.addNode(Type.ListMark, cx.lineStart + line.pos, cx.lineStart + line.pos + size);
+          line.moveBaseColumn(newBase);
+          return null;
       },
-      ".cm-tooltip": {
-          border: "none",
-          backgroundColor: tooltipBackground
+      ATXHeading(cx, line) {
+          let size = isAtxHeading(line);
+          if (size < 0)
+              return false;
+          let off = line.pos, from = cx.lineStart + off;
+          let endOfSpace = skipSpaceBack(line.text, line.text.length, off), after = endOfSpace;
+          while (after > off && line.text.charCodeAt(after - 1) == line.next)
+              after--;
+          if (after == endOfSpace || after == off || !space(line.text.charCodeAt(after - 1)))
+              after = line.text.length;
+          let buf = cx.buffer
+              .write(Type.HeaderMark, 0, size)
+              .writeElements(cx.parser.parseInline(line.text.slice(off + size + 1, after), from + size + 1), -from);
+          if (after < line.text.length)
+              buf.write(Type.HeaderMark, after - off, endOfSpace - off);
+          let node = buf.finish(Type.ATXHeading1 - 1 + size, line.text.length - off);
+          cx.nextLine();
+          cx.addNode(node, from);
+          return true;
       },
-      ".cm-tooltip .cm-tooltip-arrow:before": {
-          borderTopColor: "transparent",
-          borderBottomColor: "transparent"
+      HTMLBlock(cx, line) {
+          let type = isHTMLBlock(line, cx, false);
+          if (type < 0)
+              return false;
+          let from = cx.lineStart + line.pos, end = HTMLBlockStyle[type][1];
+          let marks = [], trailing = end != EmptyLine;
+          while (!end.test(line.text) && cx.nextLine()) {
+              if (line.depth < cx.stack.length) {
+                  trailing = false;
+                  break;
+              }
+              for (let m of line.markers)
+                  marks.push(m);
+          }
+          if (trailing)
+              cx.nextLine();
+          let nodeType = end == CommentEnd ? Type.CommentBlock : end == ProcessingEnd ? Type.ProcessingInstructionBlock : Type.HTMLBlock;
+          let to = cx.prevLineEnd();
+          cx.addNode(cx.buffer.writeElements(marks, -from).finish(nodeType, to - from), from);
+          return true;
       },
-      ".cm-tooltip .cm-tooltip-arrow:after": {
-          borderTopColor: tooltipBackground,
-          borderBottomColor: tooltipBackground
-      },
-      ".cm-tooltip-autocomplete": {
-          "& > ul > li[aria-selected]": {
-              backgroundColor: highlightBackground,
-              color: ivory
+      SetextHeading: undefined // Specifies relative precedence for block-continue function
+  };
+  // This implements a state machine that incrementally parses link references. At each
+  // next line, it looks ahead to see if the line continues the reference or not. If it
+  // doesn't and a valid link is available ending before that line, it finishes that.
+  // Similarly, on `finish` (when the leaf is terminated by external circumstances), it
+  // creates a link reference if there's a valid reference up to the current point.
+  class LinkReferenceParser {
+      constructor(leaf) {
+          this.stage = 0 /* RefStage.Start */;
+          this.elts = [];
+          this.pos = 0;
+          this.start = leaf.start;
+          this.advance(leaf.content);
+      }
+      nextLine(cx, line, leaf) {
+          if (this.stage == -1 /* RefStage.Failed */)
+              return false;
+          let content = leaf.content + "\n" + line.scrub();
+          let finish = this.advance(content);
+          if (finish > -1 && finish < content.length)
+              return this.complete(cx, leaf, finish);
+          return false;
+      }
+      finish(cx, leaf) {
+          if ((this.stage == 2 /* RefStage.Link */ || this.stage == 3 /* RefStage.Title */) && skipSpace(leaf.content, this.pos) == leaf.content.length)
+              return this.complete(cx, leaf, leaf.content.length);
+          return false;
+      }
+      complete(cx, leaf, len) {
+          cx.addLeafElement(leaf, elt(Type.LinkReference, this.start, this.start + len, this.elts));
+          return true;
+      }
+      nextStage(elt) {
+          if (elt) {
+              this.pos = elt.to - this.start;
+              this.elts.push(elt);
+              this.stage++;
+              return true;
+          }
+          if (elt === false)
+              this.stage = -1 /* RefStage.Failed */;
+          return false;
+      }
+      advance(content) {
+          for (;;) {
+              if (this.stage == -1 /* RefStage.Failed */) {
+                  return -1;
+              }
+              else if (this.stage == 0 /* RefStage.Start */) {
+                  if (!this.nextStage(parseLinkLabel(content, this.pos, this.start, true)))
+                      return -1;
+                  if (content.charCodeAt(this.pos) != 58 /* ':' */)
+                      return this.stage = -1 /* RefStage.Failed */;
+                  this.elts.push(elt(Type.LinkMark, this.pos + this.start, this.pos + this.start + 1));
+                  this.pos++;
+              }
+              else if (this.stage == 1 /* RefStage.Label */) {
+                  if (!this.nextStage(parseURL(content, skipSpace(content, this.pos), this.start)))
+                      return -1;
+              }
+              else if (this.stage == 2 /* RefStage.Link */) {
+                  let skip = skipSpace(content, this.pos), end = 0;
+                  if (skip > this.pos) {
+                      let title = parseLinkTitle(content, skip, this.start);
+                      if (title) {
+                          let titleEnd = lineEnd(content, title.to - this.start);
+                          if (titleEnd > 0) {
+                              this.nextStage(title);
+                              end = titleEnd;
+                          }
+                      }
+                  }
+                  if (!end)
+                      end = lineEnd(content, this.pos);
+                  return end > 0 && end < content.length ? end : -1;
+              }
+              else { // RefStage.Title
+                  return lineEnd(content, this.pos);
+              }
           }
       }
-  }, { dark: true });
+  }
+  function lineEnd(text, pos) {
+      for (; pos < text.length; pos++) {
+          let next = text.charCodeAt(pos);
+          if (next == 10)
+              break;
+          if (!space(next))
+              return -1;
+      }
+      return pos;
+  }
+  class SetextHeadingParser {
+      nextLine(cx, line, leaf) {
+          let underline = line.depth < cx.stack.length ? -1 : isSetextUnderline(line);
+          let next = line.next;
+          if (underline < 0)
+              return false;
+          let underlineMark = elt(Type.HeaderMark, cx.lineStart + line.pos, cx.lineStart + underline);
+          cx.nextLine();
+          cx.addLeafElement(leaf, elt(next == 61 ? Type.SetextHeading1 : Type.SetextHeading2, leaf.start, cx.prevLineEnd(), [
+              ...cx.parser.parseInline(leaf.content, leaf.start),
+              underlineMark
+          ]));
+          return true;
+      }
+      finish() {
+          return false;
+      }
+  }
+  const DefaultLeafBlocks = {
+      LinkReference(_, leaf) { return leaf.content.charCodeAt(0) == 91 /* '[' */ ? new LinkReferenceParser(leaf) : null; },
+      SetextHeading() { return new SetextHeadingParser; }
+  };
+  const DefaultEndLeaf = [
+      (_, line) => isAtxHeading(line) >= 0,
+      (_, line) => isFencedCode(line) >= 0,
+      (_, line) => isBlockquote(line) >= 0,
+      (p, line) => isBulletList(line, p, true) >= 0,
+      (p, line) => isOrderedList(line, p, true) >= 0,
+      (p, line) => isHorizontalRule(line, p, true) >= 0,
+      (p, line) => isHTMLBlock(line, p, true) >= 0
+  ];
+  const scanLineResult = { text: "", end: 0 };
   /**
-  The highlighting style for code in the One Dark theme.
+  Block-level parsing functions get access to this context object.
   */
-  const oneDarkHighlightStyle = /*@__PURE__*/HighlightStyle.define([
-      { tag: tags$1.keyword,
-          color: violet },
-      { tag: [tags$1.name, tags$1.deleted, tags$1.character, tags$1.propertyName, tags$1.macroName],
-          color: coral },
-      { tag: [/*@__PURE__*/tags$1.function(tags$1.variableName), tags$1.labelName],
-          color: malibu },
-      { tag: [tags$1.color, /*@__PURE__*/tags$1.constant(tags$1.name), /*@__PURE__*/tags$1.standard(tags$1.name)],
-          color: whiskey },
-      { tag: [/*@__PURE__*/tags$1.definition(tags$1.name), tags$1.separator],
-          color: ivory },
-      { tag: [tags$1.typeName, tags$1.className, tags$1.number, tags$1.changed, tags$1.annotation, tags$1.modifier, tags$1.self, tags$1.namespace],
-          color: chalky },
-      { tag: [tags$1.operator, tags$1.operatorKeyword, tags$1.url, tags$1.escape, tags$1.regexp, tags$1.link, /*@__PURE__*/tags$1.special(tags$1.string)],
-          color: cyan },
-      { tag: [tags$1.meta, tags$1.comment],
-          color: stone },
-      { tag: tags$1.strong,
-          fontWeight: "bold" },
-      { tag: tags$1.emphasis,
-          fontStyle: "italic" },
-      { tag: tags$1.strikethrough,
-          textDecoration: "line-through" },
-      { tag: tags$1.link,
-          color: stone,
-          textDecoration: "underline" },
-      { tag: tags$1.heading,
-          fontWeight: "bold",
-          color: coral },
-      { tag: [tags$1.atom, tags$1.bool, /*@__PURE__*/tags$1.special(tags$1.variableName)],
-          color: whiskey },
-      { tag: [tags$1.processingInstruction, tags$1.string, tags$1.inserted],
-          color: sage },
-      { tag: tags$1.invalid,
-          color: invalid },
-  ]);
+  class BlockContext {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The parser configuration used.
+      */
+      parser, 
+      /**
+      @internal
+      */
+      input, fragments, 
+      /**
+      @internal
+      */
+      ranges) {
+          this.parser = parser;
+          this.input = input;
+          this.ranges = ranges;
+          this.line = new Line();
+          this.atEnd = false;
+          /**
+          For reused nodes on gaps, we can't directly put the original
+          node into the tree, since that may be bigger than its parent.
+          When this happens, we create a dummy tree that is replaced by
+          the proper node in `injectGaps` @internal
+          */
+          this.reusePlaceholders = new Map;
+          this.stoppedAt = null;
+          /**
+          The range index that absoluteLineStart points into @internal
+          */
+          this.rangeI = 0;
+          this.to = ranges[ranges.length - 1].to;
+          this.lineStart = this.absoluteLineStart = this.absoluteLineEnd = ranges[0].from;
+          this.block = CompositeBlock.create(Type.Document, 0, this.lineStart, 0, 0);
+          this.stack = [this.block];
+          this.fragments = fragments.length ? new FragmentCursor(fragments, input) : null;
+          this.readLine();
+      }
+      get parsedPos() {
+          return this.absoluteLineStart;
+      }
+      advance() {
+          if (this.stoppedAt != null && this.absoluteLineStart > this.stoppedAt)
+              return this.finish();
+          let { line } = this;
+          for (;;) {
+              for (let markI = 0;;) {
+                  let next = line.depth < this.stack.length ? this.stack[this.stack.length - 1] : null;
+                  while (markI < line.markers.length && (!next || line.markers[markI].from < next.end)) {
+                      let mark = line.markers[markI++];
+                      this.addNode(mark.type, mark.from, mark.to);
+                  }
+                  if (!next)
+                      break;
+                  this.finishContext();
+              }
+              if (line.pos < line.text.length)
+                  break;
+              // Empty line
+              if (!this.nextLine())
+                  return this.finish();
+          }
+          if (this.fragments && this.reuseFragment(line.basePos))
+              return null;
+          start: for (;;) {
+              for (let type of this.parser.blockParsers)
+                  if (type) {
+                      let result = type(this, line);
+                      if (result != false) {
+                          if (result == true)
+                              return null;
+                          line.forward();
+                          continue start;
+                      }
+                  }
+              break;
+          }
+          let leaf = new LeafBlock(this.lineStart + line.pos, line.text.slice(line.pos));
+          for (let parse of this.parser.leafBlockParsers)
+              if (parse) {
+                  let parser = parse(this, leaf);
+                  if (parser)
+                      leaf.parsers.push(parser);
+              }
+          lines: while (this.nextLine()) {
+              if (line.pos == line.text.length)
+                  break;
+              if (line.indent < line.baseIndent + 4) {
+                  for (let stop of this.parser.endLeafBlock)
+                      if (stop(this, line, leaf))
+                          break lines;
+              }
+              for (let parser of leaf.parsers)
+                  if (parser.nextLine(this, line, leaf))
+                      return null;
+              leaf.content += "\n" + line.scrub();
+              for (let m of line.markers)
+                  leaf.marks.push(m);
+          }
+          this.finishLeaf(leaf);
+          return null;
+      }
+      stopAt(pos) {
+          if (this.stoppedAt != null && this.stoppedAt < pos)
+              throw new RangeError("Can't move stoppedAt forward");
+          this.stoppedAt = pos;
+      }
+      reuseFragment(start) {
+          if (!this.fragments.moveTo(this.absoluteLineStart + start, this.absoluteLineStart) ||
+              !this.fragments.matches(this.block.hash))
+              return false;
+          let taken = this.fragments.takeNodes(this);
+          if (!taken)
+              return false;
+          this.absoluteLineStart += taken;
+          this.lineStart = toRelative(this.absoluteLineStart, this.ranges);
+          this.moveRangeI();
+          if (this.absoluteLineStart < this.to) {
+              this.lineStart++;
+              this.absoluteLineStart++;
+              this.readLine();
+          }
+          else {
+              this.atEnd = true;
+              this.readLine();
+          }
+          return true;
+      }
+      /**
+      The number of parent blocks surrounding the current block.
+      */
+      get depth() {
+          return this.stack.length;
+      }
+      /**
+      Get the type of the parent block at the given depth. When no
+      depth is passed, return the type of the innermost parent.
+      */
+      parentType(depth = this.depth - 1) {
+          return this.parser.nodeSet.types[this.stack[depth].type];
+      }
+      /**
+      Move to the next input line. This should only be called by
+      (non-composite) [block parsers](#BlockParser.parse) that consume
+      the line directly, or leaf block parser
+      [`nextLine`](#LeafBlockParser.nextLine) methods when they
+      consume the current line (and return true).
+      */
+      nextLine() {
+          this.lineStart += this.line.text.length;
+          if (this.absoluteLineEnd >= this.to) {
+              this.absoluteLineStart = this.absoluteLineEnd;
+              this.atEnd = true;
+              this.readLine();
+              return false;
+          }
+          else {
+              this.lineStart++;
+              this.absoluteLineStart = this.absoluteLineEnd + 1;
+              this.moveRangeI();
+              this.readLine();
+              return true;
+          }
+      }
+      /**
+      Retrieve the text of the line after the current one, without
+      actually moving the context's current line forward.
+      */
+      peekLine() {
+          return this.scanLine(this.absoluteLineEnd + 1).text;
+      }
+      moveRangeI() {
+          while (this.rangeI < this.ranges.length - 1 && this.absoluteLineStart >= this.ranges[this.rangeI].to) {
+              this.rangeI++;
+              this.absoluteLineStart = Math.max(this.absoluteLineStart, this.ranges[this.rangeI].from);
+          }
+      }
+      /**
+      @internal
+      Collect the text for the next line.
+      */
+      scanLine(start) {
+          let r = scanLineResult;
+          r.end = start;
+          if (start >= this.to) {
+              r.text = "";
+          }
+          else {
+              r.text = this.lineChunkAt(start);
+              r.end += r.text.length;
+              if (this.ranges.length > 1) {
+                  let textOffset = this.absoluteLineStart, rangeI = this.rangeI;
+                  while (this.ranges[rangeI].to < r.end) {
+                      rangeI++;
+                      let nextFrom = this.ranges[rangeI].from;
+                      let after = this.lineChunkAt(nextFrom);
+                      r.end = nextFrom + after.length;
+                      r.text = r.text.slice(0, this.ranges[rangeI - 1].to - textOffset) + after;
+                      textOffset = r.end - r.text.length;
+                  }
+              }
+          }
+          return r;
+      }
+      /**
+      @internal
+      Populate this.line with the content of the next line. Skip
+      leading characters covered by composite blocks.
+      */
+      readLine() {
+          let { line } = this, { text, end } = this.scanLine(this.absoluteLineStart);
+          this.absoluteLineEnd = end;
+          line.reset(text);
+          for (; line.depth < this.stack.length; line.depth++) {
+              let cx = this.stack[line.depth], handler = this.parser.skipContextMarkup[cx.type];
+              if (!handler)
+                  throw new Error("Unhandled block context " + Type[cx.type]);
+              if (!handler(cx, this, line))
+                  break;
+              line.forward();
+          }
+      }
+      lineChunkAt(pos) {
+          let next = this.input.chunk(pos), text;
+          if (!this.input.lineChunks) {
+              let eol = next.indexOf("\n");
+              text = eol < 0 ? next : next.slice(0, eol);
+          }
+          else {
+              text = next == "\n" ? "" : next;
+          }
+          return pos + text.length > this.to ? text.slice(0, this.to - pos) : text;
+      }
+      /**
+      The end position of the previous line.
+      */
+      prevLineEnd() { return this.atEnd ? this.lineStart : this.lineStart - 1; }
+      /**
+      @internal
+      */
+      startContext(type, start, value = 0) {
+          this.block = CompositeBlock.create(type, value, this.lineStart + start, this.block.hash, this.lineStart + this.line.text.length);
+          this.stack.push(this.block);
+      }
+      /**
+      Start a composite block. Should only be called from [block
+      parser functions](#BlockParser.parse) that return null.
+      */
+      startComposite(type, start, value = 0) {
+          this.startContext(this.parser.getNodeType(type), start, value);
+      }
+      /**
+      @internal
+      */
+      addNode(block, from, to) {
+          if (typeof block == "number")
+              block = new Tree(this.parser.nodeSet.types[block], none, none, (to !== null && to !== void 0 ? to : this.prevLineEnd()) - from);
+          this.block.addChild(block, from - this.block.from);
+      }
+      /**
+      Add a block element. Can be called by [block
+      parsers](#BlockParser.parse).
+      */
+      addElement(elt) {
+          this.block.addChild(elt.toTree(this.parser.nodeSet), elt.from - this.block.from);
+      }
+      /**
+      Add a block element from a [leaf parser](#LeafBlockParser). This
+      makes sure any extra composite block markup (such as blockquote
+      markers) inside the block are also added to the syntax tree.
+      */
+      addLeafElement(leaf, elt) {
+          this.addNode(this.buffer
+              .writeElements(injectMarks(elt.children, leaf.marks), -elt.from)
+              .finish(elt.type, elt.to - elt.from), elt.from);
+      }
+      /**
+      @internal
+      */
+      finishContext() {
+          let cx = this.stack.pop();
+          let top = this.stack[this.stack.length - 1];
+          top.addChild(cx.toTree(this.parser.nodeSet), cx.from - top.from);
+          this.block = top;
+      }
+      finish() {
+          while (this.stack.length > 1)
+              this.finishContext();
+          return this.addGaps(this.block.toTree(this.parser.nodeSet, this.lineStart));
+      }
+      addGaps(tree) {
+          return this.ranges.length > 1 ?
+              injectGaps(this.ranges, 0, tree.topNode, this.ranges[0].from, this.reusePlaceholders) : tree;
+      }
+      /**
+      @internal
+      */
+      finishLeaf(leaf) {
+          for (let parser of leaf.parsers)
+              if (parser.finish(this, leaf))
+                  return;
+          let inline = injectMarks(this.parser.parseInline(leaf.content, leaf.start), leaf.marks);
+          this.addNode(this.buffer
+              .writeElements(inline, -leaf.start)
+              .finish(Type.Paragraph, leaf.content.length), leaf.start);
+      }
+      elt(type, from, to, children) {
+          if (typeof type == "string")
+              return elt(this.parser.getNodeType(type), from, to, children);
+          return new TreeElement(type, from);
+      }
+      /**
+      @internal
+      */
+      get buffer() { return new Buffer(this.parser.nodeSet); }
+  }
+  function injectGaps(ranges, rangeI, tree, offset, dummies) {
+      let rangeEnd = ranges[rangeI].to;
+      let children = [], positions = [], start = tree.from + offset;
+      function movePastNext(upto, inclusive) {
+          while (inclusive ? upto >= rangeEnd : upto > rangeEnd) {
+              let size = ranges[rangeI + 1].from - rangeEnd;
+              offset += size;
+              upto += size;
+              rangeI++;
+              rangeEnd = ranges[rangeI].to;
+          }
+      }
+      for (let ch = tree.firstChild; ch; ch = ch.nextSibling) {
+          movePastNext(ch.from + offset, true);
+          let from = ch.from + offset, node, reuse = dummies.get(ch.tree);
+          if (reuse) {
+              node = reuse;
+          }
+          else if (ch.to + offset > rangeEnd) {
+              node = injectGaps(ranges, rangeI, ch, offset, dummies);
+              movePastNext(ch.to + offset, false);
+          }
+          else {
+              node = ch.toTree();
+          }
+          children.push(node);
+          positions.push(from - start);
+      }
+      movePastNext(tree.to + offset, false);
+      return new Tree(tree.type, children, positions, tree.to + offset - start, tree.tree ? tree.tree.propValues : undefined);
+  }
   /**
-  Extension to enable the One Dark theme (both the editor theme and
-  the highlight style).
+  A Markdown parser configuration.
   */
-  const oneDark = [oneDarkTheme, /*@__PURE__*/syntaxHighlighting(oneDarkHighlightStyle)];
+  class MarkdownParser extends Parser {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The parser's syntax [node
+      types](https://lezer.codemirror.net/docs/ref/#common.NodeSet).
+      */
+      nodeSet, 
+      /**
+      @internal
+      */
+      blockParsers, 
+      /**
+      @internal
+      */
+      leafBlockParsers, 
+      /**
+      @internal
+      */
+      blockNames, 
+      /**
+      @internal
+      */
+      endLeafBlock, 
+      /**
+      @internal
+      */
+      skipContextMarkup, 
+      /**
+      @internal
+      */
+      inlineParsers, 
+      /**
+      @internal
+      */
+      inlineNames, 
+      /**
+      @internal
+      */
+      wrappers) {
+          super();
+          this.nodeSet = nodeSet;
+          this.blockParsers = blockParsers;
+          this.leafBlockParsers = leafBlockParsers;
+          this.blockNames = blockNames;
+          this.endLeafBlock = endLeafBlock;
+          this.skipContextMarkup = skipContextMarkup;
+          this.inlineParsers = inlineParsers;
+          this.inlineNames = inlineNames;
+          this.wrappers = wrappers;
+          /**
+          @internal
+          */
+          this.nodeTypes = Object.create(null);
+          for (let t of nodeSet.types)
+              this.nodeTypes[t.name] = t.id;
+      }
+      createParse(input, fragments, ranges) {
+          let parse = new BlockContext(this, input, fragments, ranges);
+          for (let w of this.wrappers)
+              parse = w(parse, input, fragments, ranges);
+          return parse;
+      }
+      /**
+      Reconfigure the parser.
+      */
+      configure(spec) {
+          let config = resolveConfig(spec);
+          if (!config)
+              return this;
+          let { nodeSet, skipContextMarkup } = this;
+          let blockParsers = this.blockParsers.slice(), leafBlockParsers = this.leafBlockParsers.slice(), blockNames = this.blockNames.slice(), inlineParsers = this.inlineParsers.slice(), inlineNames = this.inlineNames.slice(), endLeafBlock = this.endLeafBlock.slice(), wrappers = this.wrappers;
+          if (nonEmpty(config.defineNodes)) {
+              skipContextMarkup = Object.assign({}, skipContextMarkup);
+              let nodeTypes = nodeSet.types.slice(), styles;
+              for (let s of config.defineNodes) {
+                  let { name, block, composite, style } = typeof s == "string" ? { name: s } : s;
+                  if (nodeTypes.some(t => t.name == name))
+                      continue;
+                  if (composite)
+                      skipContextMarkup[nodeTypes.length] =
+                          (bl, cx, line) => composite(cx, line, bl.value);
+                  let id = nodeTypes.length;
+                  let group = composite ? ["Block", "BlockContext"] : !block ? undefined
+                      : id >= Type.ATXHeading1 && id <= Type.SetextHeading2 ? ["Block", "LeafBlock", "Heading"] : ["Block", "LeafBlock"];
+                  nodeTypes.push(NodeType.define({
+                      id,
+                      name,
+                      props: group && [[NodeProp.group, group]]
+                  }));
+                  if (style) {
+                      if (!styles)
+                          styles = {};
+                      if (Array.isArray(style) || style instanceof Tag)
+                          styles[name] = style;
+                      else
+                          Object.assign(styles, style);
+                  }
+              }
+              nodeSet = new NodeSet(nodeTypes);
+              if (styles)
+                  nodeSet = nodeSet.extend(styleTags(styles));
+          }
+          if (nonEmpty(config.props))
+              nodeSet = nodeSet.extend(...config.props);
+          if (nonEmpty(config.remove)) {
+              for (let rm of config.remove) {
+                  let block = this.blockNames.indexOf(rm), inline = this.inlineNames.indexOf(rm);
+                  if (block > -1)
+                      blockParsers[block] = leafBlockParsers[block] = undefined;
+                  if (inline > -1)
+                      inlineParsers[inline] = undefined;
+              }
+          }
+          if (nonEmpty(config.parseBlock)) {
+              for (let spec of config.parseBlock) {
+                  let found = blockNames.indexOf(spec.name);
+                  if (found > -1) {
+                      blockParsers[found] = spec.parse;
+                      leafBlockParsers[found] = spec.leaf;
+                  }
+                  else {
+                      let pos = spec.before ? findName(blockNames, spec.before)
+                          : spec.after ? findName(blockNames, spec.after) + 1 : blockNames.length - 1;
+                      blockParsers.splice(pos, 0, spec.parse);
+                      leafBlockParsers.splice(pos, 0, spec.leaf);
+                      blockNames.splice(pos, 0, spec.name);
+                  }
+                  if (spec.endLeaf)
+                      endLeafBlock.push(spec.endLeaf);
+              }
+          }
+          if (nonEmpty(config.parseInline)) {
+              for (let spec of config.parseInline) {
+                  let found = inlineNames.indexOf(spec.name);
+                  if (found > -1) {
+                      inlineParsers[found] = spec.parse;
+                  }
+                  else {
+                      let pos = spec.before ? findName(inlineNames, spec.before)
+                          : spec.after ? findName(inlineNames, spec.after) + 1 : inlineNames.length - 1;
+                      inlineParsers.splice(pos, 0, spec.parse);
+                      inlineNames.splice(pos, 0, spec.name);
+                  }
+              }
+          }
+          if (config.wrap)
+              wrappers = wrappers.concat(config.wrap);
+          return new MarkdownParser(nodeSet, blockParsers, leafBlockParsers, blockNames, endLeafBlock, skipContextMarkup, inlineParsers, inlineNames, wrappers);
+      }
+      /**
+      @internal
+      */
+      getNodeType(name) {
+          let found = this.nodeTypes[name];
+          if (found == null)
+              throw new RangeError(`Unknown node type '${name}'`);
+          return found;
+      }
+      /**
+      Parse the given piece of inline text at the given offset,
+      returning an array of [`Element`](#Element) objects representing
+      the inline content.
+      */
+      parseInline(text, offset) {
+          let cx = new InlineContext(this, text, offset);
+          outer: for (let pos = offset; pos < cx.end;) {
+              let next = cx.char(pos);
+              for (let token of this.inlineParsers)
+                  if (token) {
+                      let result = token(cx, next, pos);
+                      if (result >= 0) {
+                          pos = result;
+                          continue outer;
+                      }
+                  }
+              pos++;
+          }
+          return cx.resolveMarkers(0);
+      }
+  }
+  function nonEmpty(a) {
+      return a != null && a.length > 0;
+  }
+  function resolveConfig(spec) {
+      if (!Array.isArray(spec))
+          return spec;
+      if (spec.length == 0)
+          return null;
+      let conf = resolveConfig(spec[0]);
+      if (spec.length == 1)
+          return conf;
+      let rest = resolveConfig(spec.slice(1));
+      if (!rest || !conf)
+          return conf || rest;
+      let conc = (a, b) => (a || none).concat(b || none);
+      let wrapA = conf.wrap, wrapB = rest.wrap;
+      return {
+          props: conc(conf.props, rest.props),
+          defineNodes: conc(conf.defineNodes, rest.defineNodes),
+          parseBlock: conc(conf.parseBlock, rest.parseBlock),
+          parseInline: conc(conf.parseInline, rest.parseInline),
+          remove: conc(conf.remove, rest.remove),
+          wrap: !wrapA ? wrapB : !wrapB ? wrapA :
+              (inner, input, fragments, ranges) => wrapA(wrapB(inner, input, fragments, ranges), input, fragments, ranges)
+      };
+  }
+  function findName(names, name) {
+      let found = names.indexOf(name);
+      if (found < 0)
+          throw new RangeError(`Position specified relative to unknown parser ${name}`);
+      return found;
+  }
+  let nodeTypes = [NodeType.none];
+  for (let i = 1, name; name = Type[i]; i++) {
+      nodeTypes[i] = NodeType.define({
+          id: i,
+          name,
+          props: i >= Type.Escape ? [] : [[NodeProp.group, i in DefaultSkipMarkup ? ["Block", "BlockContext"] : ["Block", "LeafBlock"]]],
+          top: name == "Document"
+      });
+  }
+  const none = [];
+  class Buffer {
+      constructor(nodeSet) {
+          this.nodeSet = nodeSet;
+          this.content = [];
+          this.nodes = [];
+      }
+      write(type, from, to, children = 0) {
+          this.content.push(type, from, to, 4 + children * 4);
+          return this;
+      }
+      writeElements(elts, offset = 0) {
+          for (let e of elts)
+              e.writeTo(this, offset);
+          return this;
+      }
+      finish(type, length) {
+          return Tree.build({
+              buffer: this.content,
+              nodeSet: this.nodeSet,
+              reused: this.nodes,
+              topID: type,
+              length
+          });
+      }
+  }
+  /**
+  Elements are used to compose syntax nodes during parsing.
+  */
+  let Element$2 = class Element {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The node's
+      [id](https://lezer.codemirror.net/docs/ref/#common.NodeType.id).
+      */
+      type, 
+      /**
+      The start of the node, as an offset from the start of the document.
+      */
+      from, 
+      /**
+      The end of the node.
+      */
+      to, 
+      /**
+      The node's child nodes @internal
+      */
+      children = none) {
+          this.type = type;
+          this.from = from;
+          this.to = to;
+          this.children = children;
+      }
+      /**
+      @internal
+      */
+      writeTo(buf, offset) {
+          let startOff = buf.content.length;
+          buf.writeElements(this.children, offset);
+          buf.content.push(this.type, this.from + offset, this.to + offset, buf.content.length + 4 - startOff);
+      }
+      /**
+      @internal
+      */
+      toTree(nodeSet) {
+          return new Buffer(nodeSet).writeElements(this.children, -this.from).finish(this.type, this.to - this.from);
+      }
+  };
+  class TreeElement {
+      constructor(tree, from) {
+          this.tree = tree;
+          this.from = from;
+      }
+      get to() { return this.from + this.tree.length; }
+      get type() { return this.tree.type.id; }
+      get children() { return none; }
+      writeTo(buf, offset) {
+          buf.nodes.push(this.tree);
+          buf.content.push(buf.nodes.length - 1, this.from + offset, this.to + offset, -1);
+      }
+      toTree() { return this.tree; }
+  }
+  function elt(type, from, to, children) {
+      return new Element$2(type, from, to, children);
+  }
+  const EmphasisUnderscore = { resolve: "Emphasis", mark: "EmphasisMark" };
+  const EmphasisAsterisk = { resolve: "Emphasis", mark: "EmphasisMark" };
+  const LinkStart = {}, ImageStart = {};
+  class InlineDelimiter {
+      constructor(type, from, to, side) {
+          this.type = type;
+          this.from = from;
+          this.to = to;
+          this.side = side;
+      }
+  }
+  const Escapable = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+  let Punctuation = /[!"#$%&'()*+,\-.\/:;<=>?@\[\\\]^_`{|}~\xA1\u2010-\u2027]/;
+  try {
+      Punctuation = new RegExp("[\\p{S}|\\p{P}]", "u");
+  }
+  catch (_) { }
+  const DefaultInline = {
+      Escape(cx, next, start) {
+          if (next != 92 /* '\\' */ || start == cx.end - 1)
+              return -1;
+          let escaped = cx.char(start + 1);
+          for (let i = 0; i < Escapable.length; i++)
+              if (Escapable.charCodeAt(i) == escaped)
+                  return cx.append(elt(Type.Escape, start, start + 2));
+          return -1;
+      },
+      Entity(cx, next, start) {
+          if (next != 38 /* '&' */)
+              return -1;
+          let m = /^(?:#\d+|#x[a-f\d]+|\w+);/i.exec(cx.slice(start + 1, start + 31));
+          return m ? cx.append(elt(Type.Entity, start, start + 1 + m[0].length)) : -1;
+      },
+      InlineCode(cx, next, start) {
+          if (next != 96 /* '`' */ || start && cx.char(start - 1) == 96)
+              return -1;
+          let pos = start + 1;
+          while (pos < cx.end && cx.char(pos) == 96)
+              pos++;
+          let size = pos - start, curSize = 0;
+          for (; pos < cx.end; pos++) {
+              if (cx.char(pos) == 96) {
+                  curSize++;
+                  if (curSize == size && cx.char(pos + 1) != 96)
+                      return cx.append(elt(Type.InlineCode, start, pos + 1, [
+                          elt(Type.CodeMark, start, start + size),
+                          elt(Type.CodeMark, pos + 1 - size, pos + 1)
+                      ]));
+              }
+              else {
+                  curSize = 0;
+              }
+          }
+          return -1;
+      },
+      HTMLTag(cx, next, start) {
+          if (next != 60 /* '<' */ || start == cx.end - 1)
+              return -1;
+          let after = cx.slice(start + 1, cx.end);
+          let url = /^(?:[a-z][-\w+.]+:[^\s>]+|[a-z\d.!#$%&'*+/=?^_`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*)>/i.exec(after);
+          if (url) {
+              return cx.append(elt(Type.Autolink, start, start + 1 + url[0].length, [
+                  elt(Type.LinkMark, start, start + 1),
+                  // url[0] includes the closing bracket, so exclude it from this slice
+                  elt(Type.URL, start + 1, start + url[0].length),
+                  elt(Type.LinkMark, start + url[0].length, start + 1 + url[0].length)
+              ]));
+          }
+          let comment = /^!--[^>](?:-[^-]|[^-])*?-->/i.exec(after);
+          if (comment)
+              return cx.append(elt(Type.Comment, start, start + 1 + comment[0].length));
+          let procInst = /^\?[^]*?\?>/.exec(after);
+          if (procInst)
+              return cx.append(elt(Type.ProcessingInstruction, start, start + 1 + procInst[0].length));
+          let m = /^(?:![A-Z][^]*?>|!\[CDATA\[[^]*?\]\]>|\/\s*[a-zA-Z][\w-]*\s*>|\s*[a-zA-Z][\w-]*(\s+[a-zA-Z:_][\w-.:]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*(\/\s*)?>)/.exec(after);
+          if (!m)
+              return -1;
+          return cx.append(elt(Type.HTMLTag, start, start + 1 + m[0].length));
+      },
+      Emphasis(cx, next, start) {
+          if (next != 95 && next != 42)
+              return -1;
+          let pos = start + 1;
+          while (cx.char(pos) == next)
+              pos++;
+          let before = cx.slice(start - 1, start), after = cx.slice(pos, pos + 1);
+          let pBefore = Punctuation.test(before), pAfter = Punctuation.test(after);
+          let sBefore = /\s|^$/.test(before), sAfter = /\s|^$/.test(after);
+          let leftFlanking = !sAfter && (!pAfter || sBefore || pBefore);
+          let rightFlanking = !sBefore && (!pBefore || sAfter || pAfter);
+          let canOpen = leftFlanking && (next == 42 || !rightFlanking || pBefore);
+          let canClose = rightFlanking && (next == 42 || !leftFlanking || pAfter);
+          return cx.append(new InlineDelimiter(next == 95 ? EmphasisUnderscore : EmphasisAsterisk, start, pos, (canOpen ? 1 /* Mark.Open */ : 0 /* Mark.None */) | (canClose ? 2 /* Mark.Close */ : 0 /* Mark.None */)));
+      },
+      HardBreak(cx, next, start) {
+          if (next == 92 /* '\\' */ && cx.char(start + 1) == 10 /* '\n' */)
+              return cx.append(elt(Type.HardBreak, start, start + 2));
+          if (next == 32) {
+              let pos = start + 1;
+              while (cx.char(pos) == 32)
+                  pos++;
+              if (cx.char(pos) == 10 && pos >= start + 2)
+                  return cx.append(elt(Type.HardBreak, start, pos + 1));
+          }
+          return -1;
+      },
+      Link(cx, next, start) {
+          return next == 91 /* '[' */ ? cx.append(new InlineDelimiter(LinkStart, start, start + 1, 1 /* Mark.Open */)) : -1;
+      },
+      Image(cx, next, start) {
+          return next == 33 /* '!' */ && cx.char(start + 1) == 91 /* '[' */
+              ? cx.append(new InlineDelimiter(ImageStart, start, start + 2, 1 /* Mark.Open */)) : -1;
+      },
+      LinkEnd(cx, next, start) {
+          if (next != 93 /* ']' */)
+              return -1;
+          // Scanning back to the next link/image start marker
+          for (let i = cx.parts.length - 1; i >= 0; i--) {
+              let part = cx.parts[i];
+              if (part instanceof InlineDelimiter && (part.type == LinkStart || part.type == ImageStart)) {
+                  // If this one has been set invalid (because it would produce
+                  // a nested link) or there's no valid link here ignore both.
+                  if (!part.side || cx.skipSpace(part.to) == start && !/[(\[]/.test(cx.slice(start + 1, start + 2))) {
+                      cx.parts[i] = null;
+                      return -1;
+                  }
+                  // Finish the content and replace the entire range in
+                  // this.parts with the link/image node.
+                  let content = cx.takeContent(i);
+                  let link = cx.parts[i] = finishLink(cx, content, part.type == LinkStart ? Type.Link : Type.Image, part.from, start + 1);
+                  // Set any open-link markers before this link to invalid.
+                  if (part.type == LinkStart)
+                      for (let j = 0; j < i; j++) {
+                          let p = cx.parts[j];
+                          if (p instanceof InlineDelimiter && p.type == LinkStart)
+                              p.side = 0 /* Mark.None */;
+                      }
+                  return link.to;
+              }
+          }
+          return -1;
+      }
+  };
+  function finishLink(cx, content, type, start, startPos) {
+      let { text } = cx, next = cx.char(startPos), endPos = startPos;
+      content.unshift(elt(Type.LinkMark, start, start + (type == Type.Image ? 2 : 1)));
+      content.push(elt(Type.LinkMark, startPos - 1, startPos));
+      if (next == 40 /* '(' */) {
+          let pos = cx.skipSpace(startPos + 1);
+          let dest = parseURL(text, pos - cx.offset, cx.offset), title;
+          if (dest) {
+              pos = cx.skipSpace(dest.to);
+              // The destination and title must be separated by whitespace
+              if (pos != dest.to) {
+                  title = parseLinkTitle(text, pos - cx.offset, cx.offset);
+                  if (title)
+                      pos = cx.skipSpace(title.to);
+              }
+          }
+          if (cx.char(pos) == 41 /* ')' */) {
+              content.push(elt(Type.LinkMark, startPos, startPos + 1));
+              endPos = pos + 1;
+              if (dest)
+                  content.push(dest);
+              if (title)
+                  content.push(title);
+              content.push(elt(Type.LinkMark, pos, endPos));
+          }
+      }
+      else if (next == 91 /* '[' */) {
+          let label = parseLinkLabel(text, startPos - cx.offset, cx.offset, false);
+          if (label) {
+              content.push(label);
+              endPos = label.to;
+          }
+      }
+      return elt(type, start, endPos, content);
+  }
+  // These return `null` when falling off the end of the input, `false`
+  // when parsing fails otherwise (for use in the incremental link
+  // reference parser).
+  function parseURL(text, start, offset) {
+      let next = text.charCodeAt(start);
+      if (next == 60 /* '<' */) {
+          for (let pos = start + 1; pos < text.length; pos++) {
+              let ch = text.charCodeAt(pos);
+              if (ch == 62 /* '>' */)
+                  return elt(Type.URL, start + offset, pos + 1 + offset);
+              if (ch == 60 || ch == 10 /* '<\n' */)
+                  return false;
+          }
+          return null;
+      }
+      else {
+          let depth = 0, pos = start;
+          for (let escaped = false; pos < text.length; pos++) {
+              let ch = text.charCodeAt(pos);
+              if (space(ch)) {
+                  break;
+              }
+              else if (escaped) {
+                  escaped = false;
+              }
+              else if (ch == 40 /* '(' */) {
+                  depth++;
+              }
+              else if (ch == 41 /* ')' */) {
+                  if (!depth)
+                      break;
+                  depth--;
+              }
+              else if (ch == 92 /* '\\' */) {
+                  escaped = true;
+              }
+          }
+          return pos > start ? elt(Type.URL, start + offset, pos + offset) : pos == text.length ? null : false;
+      }
+  }
+  function parseLinkTitle(text, start, offset) {
+      let next = text.charCodeAt(start);
+      if (next != 39 && next != 34 && next != 40 /* '"\'(' */)
+          return false;
+      let end = next == 40 ? 41 : next;
+      for (let pos = start + 1, escaped = false; pos < text.length; pos++) {
+          let ch = text.charCodeAt(pos);
+          if (escaped)
+              escaped = false;
+          else if (ch == end)
+              return elt(Type.LinkTitle, start + offset, pos + 1 + offset);
+          else if (ch == 92 /* '\\' */)
+              escaped = true;
+      }
+      return null;
+  }
+  function parseLinkLabel(text, start, offset, requireNonWS) {
+      for (let escaped = false, pos = start + 1, end = Math.min(text.length, pos + 999); pos < end; pos++) {
+          let ch = text.charCodeAt(pos);
+          if (escaped)
+              escaped = false;
+          else if (ch == 93 /* ']' */)
+              return requireNonWS ? false : elt(Type.LinkLabel, start + offset, pos + 1 + offset);
+          else {
+              if (requireNonWS && !space(ch))
+                  requireNonWS = false;
+              if (ch == 91 /* '[' */)
+                  return false;
+              else if (ch == 92 /* '\\' */)
+                  escaped = true;
+          }
+      }
+      return null;
+  }
+  /**
+  Inline parsing functions get access to this context, and use it to
+  read the content and emit syntax nodes.
+  */
+  class InlineContext {
+      /**
+      @internal
+      */
+      constructor(
+      /**
+      The parser that is being used.
+      */
+      parser, 
+      /**
+      The text of this inline section.
+      */
+      text, 
+      /**
+      The starting offset of the section in the document.
+      */
+      offset) {
+          this.parser = parser;
+          this.text = text;
+          this.offset = offset;
+          /**
+          @internal
+          */
+          this.parts = [];
+      }
+      /**
+      Get the character code at the given (document-relative)
+      position.
+      */
+      char(pos) { return pos >= this.end ? -1 : this.text.charCodeAt(pos - this.offset); }
+      /**
+      The position of the end of this inline section.
+      */
+      get end() { return this.offset + this.text.length; }
+      /**
+      Get a substring of this inline section. Again uses
+      document-relative positions.
+      */
+      slice(from, to) { return this.text.slice(from - this.offset, to - this.offset); }
+      /**
+      @internal
+      */
+      append(elt) {
+          this.parts.push(elt);
+          return elt.to;
+      }
+      /**
+      Add a [delimiter](#DelimiterType) at this given position. `open`
+      and `close` indicate whether this delimiter is opening, closing,
+      or both. Returns the end of the delimiter, for convenient
+      returning from [parse functions](#InlineParser.parse).
+      */
+      addDelimiter(type, from, to, open, close) {
+          return this.append(new InlineDelimiter(type, from, to, (open ? 1 /* Mark.Open */ : 0 /* Mark.None */) | (close ? 2 /* Mark.Close */ : 0 /* Mark.None */)));
+      }
+      /**
+      Returns true when there is an unmatched link or image opening
+      token before the current position.
+      */
+      get hasOpenLink() {
+          for (let i = this.parts.length - 1; i >= 0; i--) {
+              let part = this.parts[i];
+              if (part instanceof InlineDelimiter && (part.type == LinkStart || part.type == ImageStart))
+                  return true;
+          }
+          return false;
+      }
+      /**
+      Add an inline element. Returns the end of the element.
+      */
+      addElement(elt) {
+          return this.append(elt);
+      }
+      /**
+      Resolve markers between this.parts.length and from, wrapping matched markers in the
+      appropriate node and updating the content of this.parts. @internal
+      */
+      resolveMarkers(from) {
+          // Scan forward, looking for closing tokens
+          for (let i = from; i < this.parts.length; i++) {
+              let close = this.parts[i];
+              if (!(close instanceof InlineDelimiter && close.type.resolve && (close.side & 2 /* Mark.Close */)))
+                  continue;
+              let emp = close.type == EmphasisUnderscore || close.type == EmphasisAsterisk;
+              let closeSize = close.to - close.from;
+              let open, j = i - 1;
+              // Continue scanning for a matching opening token
+              for (; j >= from; j--) {
+                  let part = this.parts[j];
+                  if (part instanceof InlineDelimiter && (part.side & 1 /* Mark.Open */) && part.type == close.type &&
+                      // Ignore emphasis delimiters where the character count doesn't match
+                      !(emp && ((close.side & 1 /* Mark.Open */) || (part.side & 2 /* Mark.Close */)) &&
+                          (part.to - part.from + closeSize) % 3 == 0 && ((part.to - part.from) % 3 || closeSize % 3))) {
+                      open = part;
+                      break;
+                  }
+              }
+              if (!open)
+                  continue;
+              let type = close.type.resolve, content = [];
+              let start = open.from, end = close.to;
+              // Emphasis marker effect depends on the character count. Size consumed is minimum of the two
+              // markers.
+              if (emp) {
+                  let size = Math.min(2, open.to - open.from, closeSize);
+                  start = open.to - size;
+                  end = close.from + size;
+                  type = size == 1 ? "Emphasis" : "StrongEmphasis";
+              }
+              // Move the covered region into content, optionally adding marker nodes
+              if (open.type.mark)
+                  content.push(this.elt(open.type.mark, start, open.to));
+              for (let k = j + 1; k < i; k++) {
+                  if (this.parts[k] instanceof Element$2)
+                      content.push(this.parts[k]);
+                  this.parts[k] = null;
+              }
+              if (close.type.mark)
+                  content.push(this.elt(close.type.mark, close.from, end));
+              let element = this.elt(type, start, end, content);
+              // If there are leftover emphasis marker characters, shrink the close/open markers. Otherwise, clear them.
+              this.parts[j] = emp && open.from != start ? new InlineDelimiter(open.type, open.from, start, open.side) : null;
+              let keep = this.parts[i] = emp && close.to != end ? new InlineDelimiter(close.type, end, close.to, close.side) : null;
+              // Insert the new element in this.parts
+              if (keep)
+                  this.parts.splice(i, 0, element);
+              else
+                  this.parts[i] = element;
+          }
+          // Collect the elements remaining in this.parts into an array.
+          let result = [];
+          for (let i = from; i < this.parts.length; i++) {
+              let part = this.parts[i];
+              if (part instanceof Element$2)
+                  result.push(part);
+          }
+          return result;
+      }
+      /**
+      Find an opening delimiter of the given type. Returns `null` if
+      no delimiter is found, or an index that can be passed to
+      [`takeContent`](#InlineContext.takeContent) otherwise.
+      */
+      findOpeningDelimiter(type) {
+          for (let i = this.parts.length - 1; i >= 0; i--) {
+              let part = this.parts[i];
+              if (part instanceof InlineDelimiter && part.type == type)
+                  return i;
+          }
+          return null;
+      }
+      /**
+      Remove all inline elements and delimiters starting from the
+      given index (which you should get from
+      [`findOpeningDelimiter`](#InlineContext.findOpeningDelimiter),
+      resolve delimiters inside of them, and return them as an array
+      of elements.
+      */
+      takeContent(startIndex) {
+          let content = this.resolveMarkers(startIndex);
+          this.parts.length = startIndex;
+          return content;
+      }
+      /**
+      Skip space after the given (document) position, returning either
+      the position of the next non-space character or the end of the
+      section.
+      */
+      skipSpace(from) { return skipSpace(this.text, from - this.offset) + this.offset; }
+      elt(type, from, to, children) {
+          if (typeof type == "string")
+              return elt(this.parser.getNodeType(type), from, to, children);
+          return new TreeElement(type, from);
+      }
+  }
+  function injectMarks(elements, marks) {
+      if (!marks.length)
+          return elements;
+      if (!elements.length)
+          return marks;
+      let elts = elements.slice(), eI = 0;
+      for (let mark of marks) {
+          while (eI < elts.length && elts[eI].to < mark.to)
+              eI++;
+          if (eI < elts.length && elts[eI].from < mark.from) {
+              let e = elts[eI];
+              if (e instanceof Element$2)
+                  elts[eI] = new Element$2(e.type, e.from, e.to, injectMarks(e.children, [mark]));
+          }
+          else {
+              elts.splice(eI++, 0, mark);
+          }
+      }
+      return elts;
+  }
+  // These are blocks that can span blank lines, and should thus only be
+  // reused if their next sibling is also being reused.
+  const NotLast = [Type.CodeBlock, Type.ListItem, Type.OrderedList, Type.BulletList];
+  class FragmentCursor {
+      constructor(fragments, input) {
+          this.fragments = fragments;
+          this.input = input;
+          // Index into fragment array
+          this.i = 0;
+          // Active fragment
+          this.fragment = null;
+          this.fragmentEnd = -1;
+          // Cursor into the current fragment, if any. When `moveTo` returns
+          // true, this points at the first block after `pos`.
+          this.cursor = null;
+          if (fragments.length)
+              this.fragment = fragments[this.i++];
+      }
+      nextFragment() {
+          this.fragment = this.i < this.fragments.length ? this.fragments[this.i++] : null;
+          this.cursor = null;
+          this.fragmentEnd = -1;
+      }
+      moveTo(pos, lineStart) {
+          while (this.fragment && this.fragment.to <= pos)
+              this.nextFragment();
+          if (!this.fragment || this.fragment.from > (pos ? pos - 1 : 0))
+              return false;
+          if (this.fragmentEnd < 0) {
+              let end = this.fragment.to;
+              while (end > 0 && this.input.read(end - 1, end) != "\n")
+                  end--;
+              this.fragmentEnd = end ? end - 1 : 0;
+          }
+          let c = this.cursor;
+          if (!c) {
+              c = this.cursor = this.fragment.tree.cursor();
+              c.firstChild();
+          }
+          let rPos = pos + this.fragment.offset;
+          while (c.to <= rPos)
+              if (!c.parent())
+                  return false;
+          for (;;) {
+              if (c.from >= rPos)
+                  return this.fragment.from <= lineStart;
+              if (!c.childAfter(rPos))
+                  return false;
+          }
+      }
+      matches(hash) {
+          let tree = this.cursor.tree;
+          return tree && tree.prop(NodeProp.contextHash) == hash;
+      }
+      takeNodes(cx) {
+          let cur = this.cursor, off = this.fragment.offset, fragEnd = this.fragmentEnd - (this.fragment.openEnd ? 1 : 0);
+          let start = cx.absoluteLineStart, end = start, blockI = cx.block.children.length;
+          let prevEnd = end, prevI = blockI;
+          for (;;) {
+              if (cur.to - off > fragEnd) {
+                  if (cur.type.isAnonymous && cur.firstChild())
+                      continue;
+                  break;
+              }
+              let pos = toRelative(cur.from - off, cx.ranges);
+              if (cur.to - off <= cx.ranges[cx.rangeI].to) { // Fits in current range
+                  cx.addNode(cur.tree, pos);
+              }
+              else {
+                  let dummy = new Tree(cx.parser.nodeSet.types[Type.Paragraph], [], [], 0, cx.block.hashProp);
+                  cx.reusePlaceholders.set(dummy, cur.tree);
+                  cx.addNode(dummy, pos);
+              }
+              // Taken content must always end in a block, because incremental
+              // parsing happens on block boundaries. Never stop directly
+              // after an indented code block, since those can continue after
+              // any number of blank lines.
+              if (cur.type.is("Block")) {
+                  if (NotLast.indexOf(cur.type.id) < 0) {
+                      end = cur.to - off;
+                      blockI = cx.block.children.length;
+                  }
+                  else {
+                      end = prevEnd;
+                      blockI = prevI;
+                      prevEnd = cur.to - off;
+                      prevI = cx.block.children.length;
+                  }
+              }
+              if (!cur.nextSibling())
+                  break;
+          }
+          while (cx.block.children.length > blockI) {
+              cx.block.children.pop();
+              cx.block.positions.pop();
+          }
+          return end - start;
+      }
+  }
+  // Convert an input-stream-relative position to a
+  // Markdown-doc-relative position by subtracting the size of all input
+  // gaps before `abs`.
+  function toRelative(abs, ranges) {
+      let pos = abs;
+      for (let i = 1; i < ranges.length; i++) {
+          let gapFrom = ranges[i - 1].to, gapTo = ranges[i].from;
+          if (gapFrom < abs)
+              pos -= gapTo - gapFrom;
+      }
+      return pos;
+  }
+  const markdownHighlighting = styleTags({
+      "Blockquote/...": tags$1.quote,
+      HorizontalRule: tags$1.contentSeparator,
+      "ATXHeading1/... SetextHeading1/...": tags$1.heading1,
+      "ATXHeading2/... SetextHeading2/...": tags$1.heading2,
+      "ATXHeading3/...": tags$1.heading3,
+      "ATXHeading4/...": tags$1.heading4,
+      "ATXHeading5/...": tags$1.heading5,
+      "ATXHeading6/...": tags$1.heading6,
+      "Comment CommentBlock": tags$1.comment,
+      Escape: tags$1.escape,
+      Entity: tags$1.character,
+      "Emphasis/...": tags$1.emphasis,
+      "StrongEmphasis/...": tags$1.strong,
+      "Link/... Image/...": tags$1.link,
+      "OrderedList/... BulletList/...": tags$1.list,
+      "BlockQuote/...": tags$1.quote,
+      "InlineCode CodeText": tags$1.monospace,
+      "URL Autolink": tags$1.url,
+      "HeaderMark HardBreak QuoteMark ListMark LinkMark EmphasisMark CodeMark": tags$1.processingInstruction,
+      "CodeInfo LinkLabel": tags$1.labelName,
+      LinkTitle: tags$1.string,
+      Paragraph: tags$1.content
+  });
+  /**
+  The default CommonMark parser.
+  */
+  const parser$1 = new MarkdownParser(new NodeSet(nodeTypes).extend(markdownHighlighting), Object.keys(DefaultBlockParsers).map(n => DefaultBlockParsers[n]), Object.keys(DefaultBlockParsers).map(n => DefaultLeafBlocks[n]), Object.keys(DefaultBlockParsers), DefaultEndLeaf, DefaultSkipMarkup, Object.keys(DefaultInline).map(n => DefaultInline[n]), Object.keys(DefaultInline), []);
+
+  function leftOverSpace(node, from, to) {
+      let ranges = [];
+      for (let n = node.firstChild, pos = from;; n = n.nextSibling) {
+          let nextPos = n ? n.from : to;
+          if (nextPos > pos)
+              ranges.push({ from: pos, to: nextPos });
+          if (!n)
+              break;
+          pos = n.to;
+      }
+      return ranges;
+  }
+  /**
+  Create a Markdown extension to enable nested parsing on code
+  blocks and/or embedded HTML.
+  */
+  function parseCode(config) {
+      let { codeParser, htmlParser } = config;
+      let wrap = parseMixed((node, input) => {
+          let id = node.type.id;
+          if (codeParser && (id == Type.CodeBlock || id == Type.FencedCode)) {
+              let info = "";
+              if (id == Type.FencedCode) {
+                  let infoNode = node.node.getChild(Type.CodeInfo);
+                  if (infoNode)
+                      info = input.read(infoNode.from, infoNode.to);
+              }
+              let parser = codeParser(info);
+              if (parser)
+                  return { parser, overlay: node => node.type.id == Type.CodeText };
+          }
+          else if (htmlParser && (id == Type.HTMLBlock || id == Type.HTMLTag || id == Type.CommentBlock)) {
+              return { parser: htmlParser, overlay: leftOverSpace(node.node, node.from, node.to) };
+          }
+          return null;
+      });
+      return { wrap };
+  }
+
+  const StrikethroughDelim = { resolve: "Strikethrough", mark: "StrikethroughMark" };
+  /**
+  An extension that implements
+  [GFM-style](https://github.github.com/gfm/#strikethrough-extension-)
+  Strikethrough syntax using `~~` delimiters.
+  */
+  const Strikethrough = {
+      defineNodes: [{
+              name: "Strikethrough",
+              style: { "Strikethrough/...": tags$1.strikethrough }
+          }, {
+              name: "StrikethroughMark",
+              style: tags$1.processingInstruction
+          }],
+      parseInline: [{
+              name: "Strikethrough",
+              parse(cx, next, pos) {
+                  if (next != 126 /* '~' */ || cx.char(pos + 1) != 126 || cx.char(pos + 2) == 126)
+                      return -1;
+                  let before = cx.slice(pos - 1, pos), after = cx.slice(pos + 2, pos + 3);
+                  let sBefore = /\s|^$/.test(before), sAfter = /\s|^$/.test(after);
+                  let pBefore = Punctuation.test(before), pAfter = Punctuation.test(after);
+                  return cx.addDelimiter(StrikethroughDelim, pos, pos + 2, !sAfter && (!pAfter || sBefore || pBefore), !sBefore && (!pBefore || sAfter || pAfter));
+              },
+              after: "Emphasis"
+          }]
+  };
+  // Parse a line as a table row and return the row count. When `elts`
+  // is given, push syntax elements for the content onto it.
+  function parseRow(cx, line, startI = 0, elts, offset = 0) {
+      let count = 0, first = true, cellStart = -1, cellEnd = -1, esc = false;
+      let parseCell = () => {
+          elts.push(cx.elt("TableCell", offset + cellStart, offset + cellEnd, cx.parser.parseInline(line.slice(cellStart, cellEnd), offset + cellStart)));
+      };
+      for (let i = startI; i < line.length; i++) {
+          let next = line.charCodeAt(i);
+          if (next == 124 /* '|' */ && !esc) {
+              if (!first || cellStart > -1)
+                  count++;
+              first = false;
+              if (elts) {
+                  if (cellStart > -1)
+                      parseCell();
+                  elts.push(cx.elt("TableDelimiter", i + offset, i + offset + 1));
+              }
+              cellStart = cellEnd = -1;
+          }
+          else if (esc || next != 32 && next != 9) {
+              if (cellStart < 0)
+                  cellStart = i;
+              cellEnd = i + 1;
+          }
+          esc = !esc && next == 92;
+      }
+      if (cellStart > -1) {
+          count++;
+          if (elts)
+              parseCell();
+      }
+      return count;
+  }
+  function hasPipe(str, start) {
+      for (let i = start; i < str.length; i++) {
+          let next = str.charCodeAt(i);
+          if (next == 124 /* '|' */)
+              return true;
+          if (next == 92 /* '\\' */)
+              i++;
+      }
+      return false;
+  }
+  const delimiterLine = /^\|?(\s*:?-+:?\s*\|)+(\s*:?-+:?\s*)?$/;
+  class TableParser {
+      constructor() {
+          // Null means we haven't seen the second line yet, false means this
+          // isn't a table, and an array means this is a table and we've
+          // parsed the given rows so far.
+          this.rows = null;
+      }
+      nextLine(cx, line, leaf) {
+          if (this.rows == null) { // Second line
+              this.rows = false;
+              let lineText;
+              if ((line.next == 45 || line.next == 58 || line.next == 124 /* '-:|' */) &&
+                  delimiterLine.test(lineText = line.text.slice(line.pos))) {
+                  let firstRow = [], firstCount = parseRow(cx, leaf.content, 0, firstRow, leaf.start);
+                  if (firstCount == parseRow(cx, lineText, line.pos))
+                      this.rows = [cx.elt("TableHeader", leaf.start, leaf.start + leaf.content.length, firstRow),
+                          cx.elt("TableDelimiter", cx.lineStart + line.pos, cx.lineStart + line.text.length)];
+              }
+          }
+          else if (this.rows) { // Line after the second
+              let content = [];
+              parseRow(cx, line.text, line.pos, content, cx.lineStart);
+              this.rows.push(cx.elt("TableRow", cx.lineStart + line.pos, cx.lineStart + line.text.length, content));
+          }
+          return false;
+      }
+      finish(cx, leaf) {
+          if (!this.rows)
+              return false;
+          cx.addLeafElement(leaf, cx.elt("Table", leaf.start, leaf.start + leaf.content.length, this.rows));
+          return true;
+      }
+  }
+  /**
+  This extension provides
+  [GFM-style](https://github.github.com/gfm/#tables-extension-)
+  tables, using syntax like this:
+
+  ```
+  | head 1 | head 2 |
+  | ---    | ---    |
+  | cell 1 | cell 2 |
+  ```
+  */
+  const Table = {
+      defineNodes: [
+          { name: "Table", block: true },
+          { name: "TableHeader", style: { "TableHeader/...": tags$1.heading } },
+          "TableRow",
+          { name: "TableCell", style: tags$1.content },
+          { name: "TableDelimiter", style: tags$1.processingInstruction },
+      ],
+      parseBlock: [{
+              name: "Table",
+              leaf(_, leaf) { return hasPipe(leaf.content, 0) ? new TableParser : null; },
+              endLeaf(cx, line, leaf) {
+                  if (leaf.parsers.some(p => p instanceof TableParser) || !hasPipe(line.text, line.basePos))
+                      return false;
+                  let next = cx.peekLine();
+                  return delimiterLine.test(next) && parseRow(cx, line.text, line.basePos) == parseRow(cx, next, line.basePos);
+              },
+              before: "SetextHeading"
+          }]
+  };
+  class TaskParser {
+      nextLine() { return false; }
+      finish(cx, leaf) {
+          cx.addLeafElement(leaf, cx.elt("Task", leaf.start, leaf.start + leaf.content.length, [
+              cx.elt("TaskMarker", leaf.start, leaf.start + 3),
+              ...cx.parser.parseInline(leaf.content.slice(3), leaf.start + 3)
+          ]));
+          return true;
+      }
+  }
+  /**
+  Extension providing
+  [GFM-style](https://github.github.com/gfm/#task-list-items-extension-)
+  task list items, where list items can be prefixed with `[ ]` or
+  `[x]` to add a checkbox.
+  */
+  const TaskList = {
+      defineNodes: [
+          { name: "Task", block: true, style: tags$1.list },
+          { name: "TaskMarker", style: tags$1.atom }
+      ],
+      parseBlock: [{
+              name: "TaskList",
+              leaf(cx, leaf) {
+                  return /^\[[ xX]\][ \t]/.test(leaf.content) && cx.parentType().name == "ListItem" ? new TaskParser : null;
+              },
+              after: "SetextHeading"
+          }]
+  };
+  const autolinkRE = /(www\.)|(https?:\/\/)|([\w.+-]{1,100}@)|(mailto:|xmpp:)/gy;
+  const urlRE = /[\w-]+(\.[\w-]+)+(\/[^\s<]*)?/gy;
+  const lastTwoDomainWords = /[\w-]+\.[\w-]+($|\/)/;
+  const emailRE = /[\w.+-]+@[\w-]+(\.[\w.-]+)+/gy;
+  const xmppResourceRE = /\/[a-zA-Z\d@.]+/gy;
+  function count(str, from, to, ch) {
+      let result = 0;
+      for (let i = from; i < to; i++)
+          if (str[i] == ch)
+              result++;
+      return result;
+  }
+  function autolinkURLEnd(text, from) {
+      urlRE.lastIndex = from;
+      let m = urlRE.exec(text);
+      if (!m || lastTwoDomainWords.exec(m[0])[0].indexOf("_") > -1)
+          return -1;
+      let end = from + m[0].length;
+      for (;;) {
+          let last = text[end - 1], m;
+          if (/[?!.,:*_~]/.test(last) ||
+              last == ")" && count(text, from, end, ")") > count(text, from, end, "("))
+              end--;
+          else if (last == ";" && (m = /&(?:#\d+|#x[a-f\d]+|\w+);$/.exec(text.slice(from, end))))
+              end = from + m.index;
+          else
+              break;
+      }
+      return end;
+  }
+  function autolinkEmailEnd(text, from) {
+      emailRE.lastIndex = from;
+      let m = emailRE.exec(text);
+      if (!m)
+          return -1;
+      let last = m[0][m[0].length - 1];
+      return last == "_" || last == "-" ? -1 : from + m[0].length - (last == "." ? 1 : 0);
+  }
+  /**
+  Extension that implements autolinking for
+  `www.`/`http://`/`https://`/`mailto:`/`xmpp:` URLs and email
+  addresses.
+  */
+  const Autolink = {
+      parseInline: [{
+              name: "Autolink",
+              parse(cx, next, absPos) {
+                  let pos = absPos - cx.offset;
+                  if (pos && /\w/.test(cx.text[pos - 1]))
+                      return -1;
+                  autolinkRE.lastIndex = pos;
+                  let m = autolinkRE.exec(cx.text), end = -1;
+                  if (!m)
+                      return -1;
+                  if (m[1] || m[2]) { // www., http://
+                      end = autolinkURLEnd(cx.text, pos + m[0].length);
+                      if (end > -1 && cx.hasOpenLink) {
+                          let noBracket = /([^\[\]]|\[[^\]]*\])*/.exec(cx.text.slice(pos, end));
+                          end = pos + noBracket[0].length;
+                      }
+                  }
+                  else if (m[3]) { // email address
+                      end = autolinkEmailEnd(cx.text, pos);
+                  }
+                  else { // mailto:/xmpp:
+                      end = autolinkEmailEnd(cx.text, pos + m[0].length);
+                      if (end > -1 && m[0] == "xmpp:") {
+                          xmppResourceRE.lastIndex = end;
+                          m = xmppResourceRE.exec(cx.text);
+                          if (m)
+                              end = m.index + m[0].length;
+                      }
+                  }
+                  if (end < 0)
+                      return -1;
+                  cx.addElement(cx.elt("URL", absPos, end + cx.offset));
+                  return end + cx.offset;
+              }
+          }]
+  };
+  /**
+  Extension bundle containing [`Table`](#Table),
+  [`TaskList`](#TaskList), [`Strikethrough`](#Strikethrough), and
+  [`Autolink`](#Autolink).
+  */
+  const GFM = [Table, TaskList, Strikethrough, Autolink];
+  function parseSubSuper(ch, node, mark) {
+      return (cx, next, pos) => {
+          if (next != ch || cx.char(pos + 1) == ch)
+              return -1;
+          let elts = [cx.elt(mark, pos, pos + 1)];
+          for (let i = pos + 1; i < cx.end; i++) {
+              let next = cx.char(i);
+              if (next == ch)
+                  return cx.addElement(cx.elt(node, pos, i + 1, elts.concat(cx.elt(mark, i, i + 1))));
+              if (next == 92 /* '\\' */)
+                  elts.push(cx.elt("Escape", i, i++ + 2));
+              if (space(next))
+                  break;
+          }
+          return -1;
+      };
+  }
+  /**
+  Extension providing
+  [Pandoc-style](https://pandoc.org/MANUAL.html#superscripts-and-subscripts)
+  superscript using `^` markers.
+  */
+  const Superscript = {
+      defineNodes: [
+          { name: "Superscript", style: tags$1.special(tags$1.content) },
+          { name: "SuperscriptMark", style: tags$1.processingInstruction }
+      ],
+      parseInline: [{
+              name: "Superscript",
+              parse: parseSubSuper(94 /* '^' */, "Superscript", "SuperscriptMark")
+          }]
+  };
+  /**
+  Extension providing
+  [Pandoc-style](https://pandoc.org/MANUAL.html#superscripts-and-subscripts)
+  subscript using `~` markers.
+  */
+  const Subscript = {
+      defineNodes: [
+          { name: "Subscript", style: tags$1.special(tags$1.content) },
+          { name: "SubscriptMark", style: tags$1.processingInstruction }
+      ],
+      parseInline: [{
+              name: "Subscript",
+              parse: parseSubSuper(126 /* '~' */, "Subscript", "SubscriptMark")
+          }]
+  };
+  /**
+  Extension that parses two colons with only letters, underscores,
+  and numbers between them as `Emoji` nodes.
+  */
+  const Emoji = {
+      defineNodes: [{ name: "Emoji", style: tags$1.character }],
+      parseInline: [{
+              name: "Emoji",
+              parse(cx, next, pos) {
+                  let match;
+                  if (next != 58 /* ':' */ || !(match = /^[a-zA-Z_0-9]+:/.exec(cx.slice(pos + 1, cx.end))))
+                      return -1;
+                  return cx.addElement(cx.elt("Emoji", pos, pos + 1 + match[0].length));
+              }
+          }]
+  };
+
+  const data = /*@__PURE__*/defineLanguageFacet({ commentTokens: { block: { open: "<!--", close: "-->" } } });
+  const headingProp = /*@__PURE__*/new NodeProp();
+  const commonmark = /*@__PURE__*/parser$1.configure({
+      props: [
+          /*@__PURE__*/foldNodeProp.add(type => {
+              return !type.is("Block") || type.is("Document") || isHeading(type) != null || isList(type) ? undefined
+                  : (tree, state) => ({ from: state.doc.lineAt(tree.from).to, to: tree.to });
+          }),
+          /*@__PURE__*/headingProp.add(isHeading),
+          /*@__PURE__*/indentNodeProp.add({
+              Document: () => null
+          }),
+          /*@__PURE__*/languageDataProp.add({
+              Document: data
+          })
+      ]
+  });
+  function isHeading(type) {
+      let match = /^(?:ATX|Setext)Heading(\d)$/.exec(type.name);
+      return match ? +match[1] : undefined;
+  }
+  function isList(type) {
+      return type.name == "OrderedList" || type.name == "BulletList";
+  }
+  function findSectionEnd(headerNode, level) {
+      let last = headerNode;
+      for (;;) {
+          let next = last.nextSibling, heading;
+          if (!next || (heading = isHeading(next.type)) != null && heading <= level)
+              break;
+          last = next;
+      }
+      return last.to;
+  }
+  const headerIndent = /*@__PURE__*/foldService.of((state, start, end) => {
+      for (let node = syntaxTree(state).resolveInner(end, -1); node; node = node.parent) {
+          if (node.from < start)
+              break;
+          let heading = node.type.prop(headingProp);
+          if (heading == null)
+              continue;
+          let upto = findSectionEnd(node, heading);
+          if (upto > end)
+              return { from: end, to: upto };
+      }
+      return null;
+  });
+  function mkLang(parser) {
+      return new Language(data, parser, [], "markdown");
+  }
+  /**
+  Language support for strict CommonMark.
+  */
+  const commonmarkLanguage = /*@__PURE__*/mkLang(commonmark);
+  const extended = /*@__PURE__*/commonmark.configure([GFM, Subscript, Superscript, Emoji, {
+          props: [
+              /*@__PURE__*/foldNodeProp.add({
+                  Table: (tree, state) => ({ from: state.doc.lineAt(tree.from).to, to: tree.to })
+              })
+          ]
+      }]);
+  /**
+  Language support for [GFM](https://github.github.com/gfm/) plus
+  subscript, superscript, and emoji syntax.
+  */
+  const markdownLanguage = /*@__PURE__*/mkLang(extended);
+  function getCodeParser(languages, defaultLanguage) {
+      return (info) => {
+          if (info && languages) {
+              let found = null;
+              // Strip anything after whitespace
+              info = /\S*/.exec(info)[0];
+              if (typeof languages == "function")
+                  found = languages(info);
+              else
+                  found = LanguageDescription.matchLanguageName(languages, info, true);
+              if (found instanceof LanguageDescription)
+                  return found.support ? found.support.language.parser : ParseContext.getSkippingParser(found.load());
+              else if (found)
+                  return found.parser;
+          }
+          return defaultLanguage ? defaultLanguage.parser : null;
+      };
+  }
+
+  class Context {
+      constructor(node, from, to, spaceBefore, spaceAfter, type, item) {
+          this.node = node;
+          this.from = from;
+          this.to = to;
+          this.spaceBefore = spaceBefore;
+          this.spaceAfter = spaceAfter;
+          this.type = type;
+          this.item = item;
+      }
+      blank(maxWidth, trailing = true) {
+          let result = this.spaceBefore + (this.node.name == "Blockquote" ? ">" : "");
+          if (maxWidth != null) {
+              while (result.length < maxWidth)
+                  result += " ";
+              return result;
+          }
+          else {
+              for (let i = this.to - this.from - result.length - this.spaceAfter.length; i > 0; i--)
+                  result += " ";
+              return result + (trailing ? this.spaceAfter : "");
+          }
+      }
+      marker(doc, add) {
+          let number = this.node.name == "OrderedList" ? String((+itemNumber(this.item, doc)[2] + add)) : "";
+          return this.spaceBefore + number + this.type + this.spaceAfter;
+      }
+  }
+  function getContext(node, doc) {
+      let nodes = [], context = [];
+      for (let cur = node; cur; cur = cur.parent) {
+          if (cur.name == "FencedCode")
+              return context;
+          if (cur.name == "ListItem" || cur.name == "Blockquote")
+              nodes.push(cur);
+      }
+      for (let i = nodes.length - 1; i >= 0; i--) {
+          let node = nodes[i], match;
+          let line = doc.lineAt(node.from), startPos = node.from - line.from;
+          if (node.name == "Blockquote" && (match = /^ *>( ?)/.exec(line.text.slice(startPos)))) {
+              context.push(new Context(node, startPos, startPos + match[0].length, "", match[1], ">", null));
+          }
+          else if (node.name == "ListItem" && node.parent.name == "OrderedList" &&
+              (match = /^( *)\d+([.)])( *)/.exec(line.text.slice(startPos)))) {
+              let after = match[3], len = match[0].length;
+              if (after.length >= 4) {
+                  after = after.slice(0, after.length - 4);
+                  len -= 4;
+              }
+              context.push(new Context(node.parent, startPos, startPos + len, match[1], after, match[2], node));
+          }
+          else if (node.name == "ListItem" && node.parent.name == "BulletList" &&
+              (match = /^( *)([-+*])( {1,4}\[[ xX]\])?( +)/.exec(line.text.slice(startPos)))) {
+              let after = match[4], len = match[0].length;
+              if (after.length > 4) {
+                  after = after.slice(0, after.length - 4);
+                  len -= 4;
+              }
+              let type = match[2];
+              if (match[3])
+                  type += match[3].replace(/[xX]/, ' ');
+              context.push(new Context(node.parent, startPos, startPos + len, match[1], after, type, node));
+          }
+      }
+      return context;
+  }
+  function itemNumber(item, doc) {
+      return /^(\s*)(\d+)(?=[.)])/.exec(doc.sliceString(item.from, item.from + 10));
+  }
+  function renumberList(after, doc, changes, offset = 0) {
+      for (let prev = -1, node = after;;) {
+          if (node.name == "ListItem") {
+              let m = itemNumber(node, doc);
+              let number = +m[2];
+              if (prev >= 0) {
+                  if (number != prev + 1)
+                      return;
+                  changes.push({ from: node.from + m[1].length, to: node.from + m[0].length, insert: String(prev + 2 + offset) });
+              }
+              prev = number;
+          }
+          let next = node.nextSibling;
+          if (!next)
+              break;
+          node = next;
+      }
+  }
+  function normalizeIndent(content, state) {
+      let blank = /^[ \t]*/.exec(content)[0].length;
+      if (!blank || state.facet(indentUnit) != "\t")
+          return content;
+      let col = countColumn(content, 4, blank);
+      let space = "";
+      for (let i = col; i > 0;) {
+          if (i >= 4) {
+              space += "\t";
+              i -= 4;
+          }
+          else {
+              space += " ";
+              i--;
+          }
+      }
+      return space + content.slice(blank);
+  }
+  /**
+  This command, when invoked in Markdown context with cursor
+  selection(s), will create a new line with the markup for
+  blockquotes and lists that were active on the old line. If the
+  cursor was directly after the end of the markup for the old line,
+  trailing whitespace and list markers are removed from that line.
+
+  The command does nothing in non-Markdown context, so it should
+  not be used as the only binding for Enter (even in a Markdown
+  document, HTML and code regions might use a different language).
+  */
+  const insertNewlineContinueMarkup = ({ state, dispatch }) => {
+      let tree = syntaxTree(state), { doc } = state;
+      let dont = null, changes = state.changeByRange(range => {
+          if (!range.empty || !markdownLanguage.isActiveAt(state, range.from, -1) && !markdownLanguage.isActiveAt(state, range.from, 1))
+              return dont = { range };
+          let pos = range.from, line = doc.lineAt(pos);
+          let context = getContext(tree.resolveInner(pos, -1), doc);
+          while (context.length && context[context.length - 1].from > pos - line.from)
+              context.pop();
+          if (!context.length)
+              return dont = { range };
+          let inner = context[context.length - 1];
+          if (inner.to - inner.spaceAfter.length > pos - line.from)
+              return dont = { range };
+          let emptyLine = pos >= (inner.to - inner.spaceAfter.length) && !/\S/.test(line.text.slice(inner.to));
+          // Empty line in list
+          if (inner.item && emptyLine) {
+              let first = inner.node.firstChild, second = inner.node.getChild("ListItem", "ListItem");
+              // Not second item or blank line before: delete a level of markup
+              if (first.to >= pos || second && second.to < pos ||
+                  line.from > 0 && !/[^\s>]/.test(doc.lineAt(line.from - 1).text)) {
+                  let next = context.length > 1 ? context[context.length - 2] : null;
+                  let delTo, insert = "";
+                  if (next && next.item) { // Re-add marker for the list at the next level
+                      delTo = line.from + next.from;
+                      insert = next.marker(doc, 1);
+                  }
+                  else {
+                      delTo = line.from + (next ? next.to : 0);
+                  }
+                  let changes = [{ from: delTo, to: pos, insert }];
+                  if (inner.node.name == "OrderedList")
+                      renumberList(inner.item, doc, changes, -2);
+                  if (next && next.node.name == "OrderedList")
+                      renumberList(next.item, doc, changes);
+                  return { range: EditorSelection.cursor(delTo + insert.length), changes };
+              }
+              else { // Move second item down, making tight two-item list non-tight
+                  let insert = blankLine(context, state, line);
+                  return { range: EditorSelection.cursor(pos + insert.length + 1),
+                      changes: { from: line.from, insert: insert + state.lineBreak } };
+              }
+          }
+          if (inner.node.name == "Blockquote" && emptyLine && line.from) {
+              let prevLine = doc.lineAt(line.from - 1), quoted = />\s*$/.exec(prevLine.text);
+              // Two aligned empty quoted lines in a row
+              if (quoted && quoted.index == inner.from) {
+                  let changes = state.changes([{ from: prevLine.from + quoted.index, to: prevLine.to },
+                      { from: line.from + inner.from, to: line.to }]);
+                  return { range: range.map(changes), changes };
+              }
+          }
+          let changes = [];
+          if (inner.node.name == "OrderedList")
+              renumberList(inner.item, doc, changes);
+          let continued = inner.item && inner.item.from < line.from;
+          let insert = "";
+          // If not dedented
+          if (!continued || /^[\s\d.)\-+*>]*/.exec(line.text)[0].length >= inner.to) {
+              for (let i = 0, e = context.length - 1; i <= e; i++) {
+                  insert += i == e && !continued ? context[i].marker(doc, 1)
+                      : context[i].blank(i < e ? countColumn(line.text, 4, context[i + 1].from) - insert.length : null);
+              }
+          }
+          let from = pos;
+          while (from > line.from && /\s/.test(line.text.charAt(from - line.from - 1)))
+              from--;
+          insert = normalizeIndent(insert, state);
+          if (nonTightList(inner.node, state.doc))
+              insert = blankLine(context, state, line) + state.lineBreak + insert;
+          changes.push({ from, to: pos, insert: state.lineBreak + insert });
+          return { range: EditorSelection.cursor(from + insert.length + 1), changes };
+      });
+      if (dont)
+          return false;
+      dispatch(state.update(changes, { scrollIntoView: true, userEvent: "input" }));
+      return true;
+  };
+  function isMark(node) {
+      return node.name == "QuoteMark" || node.name == "ListMark";
+  }
+  function nonTightList(node, doc) {
+      if (node.name != "OrderedList" && node.name != "BulletList")
+          return false;
+      let first = node.firstChild, second = node.getChild("ListItem", "ListItem");
+      if (!second)
+          return false;
+      let line1 = doc.lineAt(first.to), line2 = doc.lineAt(second.from);
+      let empty = /^[\s>]*$/.test(line1.text);
+      return line1.number + (empty ? 0 : 1) < line2.number;
+  }
+  function blankLine(context, state, line) {
+      let insert = "";
+      for (let i = 0, e = context.length - 2; i <= e; i++) {
+          insert += context[i].blank(i < e
+              ? countColumn(line.text, 4, context[i + 1].from) - insert.length
+              : null, i < e);
+      }
+      return normalizeIndent(insert, state);
+  }
+  function contextNodeForDelete(tree, pos) {
+      let node = tree.resolveInner(pos, -1), scan = pos;
+      if (isMark(node)) {
+          scan = node.from;
+          node = node.parent;
+      }
+      for (let prev; prev = node.childBefore(scan);) {
+          if (isMark(prev)) {
+              scan = prev.from;
+          }
+          else if (prev.name == "OrderedList" || prev.name == "BulletList") {
+              node = prev.lastChild;
+              scan = node.to;
+          }
+          else {
+              break;
+          }
+      }
+      return node;
+  }
+  /**
+  This command will, when invoked in a Markdown context with the
+  cursor directly after list or blockquote markup, delete one level
+  of markup. When the markup is for a list, it will be replaced by
+  spaces on the first invocation (a further invocation will delete
+  the spaces), to make it easy to continue a list.
+
+  When not after Markdown block markup, this command will return
+  false, so it is intended to be bound alongside other deletion
+  commands, with a higher precedence than the more generic commands.
+  */
+  const deleteMarkupBackward = ({ state, dispatch }) => {
+      let tree = syntaxTree(state);
+      let dont = null, changes = state.changeByRange(range => {
+          let pos = range.from, { doc } = state;
+          if (range.empty && markdownLanguage.isActiveAt(state, range.from)) {
+              let line = doc.lineAt(pos);
+              let context = getContext(contextNodeForDelete(tree, pos), doc);
+              if (context.length) {
+                  let inner = context[context.length - 1];
+                  let spaceEnd = inner.to - inner.spaceAfter.length + (inner.spaceAfter ? 1 : 0);
+                  // Delete extra trailing space after markup
+                  if (pos - line.from > spaceEnd && !/\S/.test(line.text.slice(spaceEnd, pos - line.from)))
+                      return { range: EditorSelection.cursor(line.from + spaceEnd),
+                          changes: { from: line.from + spaceEnd, to: pos } };
+                  if (pos - line.from == spaceEnd &&
+                      // Only apply this if we're on the line that has the
+                      // construct's syntax, or there's only indentation in the
+                      // target range
+                      (!inner.item || line.from <= inner.item.from || !/\S/.test(line.text.slice(0, inner.to)))) {
+                      let start = line.from + inner.from;
+                      // Replace a list item marker with blank space
+                      if (inner.item && inner.node.from < inner.item.from && /\S/.test(line.text.slice(inner.from, inner.to))) {
+                          let insert = inner.blank(countColumn(line.text, 4, inner.to) - countColumn(line.text, 4, inner.from));
+                          if (start == line.from)
+                              insert = normalizeIndent(insert, state);
+                          return { range: EditorSelection.cursor(start + insert.length),
+                              changes: { from: start, to: line.from + inner.to, insert } };
+                      }
+                      // Delete one level of indentation
+                      if (start < pos)
+                          return { range: EditorSelection.cursor(start), changes: { from: start, to: pos } };
+                  }
+              }
+          }
+          return dont = { range };
+      });
+      if (dont)
+          return false;
+      dispatch(state.update(changes, { scrollIntoView: true, userEvent: "delete" }));
+      return true;
+  };
+
+  /**
+  A small keymap with Markdown-specific bindings. Binds Enter to
+  [`insertNewlineContinueMarkup`](https://codemirror.net/6/docs/ref/#lang-markdown.insertNewlineContinueMarkup)
+  and Backspace to
+  [`deleteMarkupBackward`](https://codemirror.net/6/docs/ref/#lang-markdown.deleteMarkupBackward).
+  */
+  const markdownKeymap = [
+      { key: "Enter", run: insertNewlineContinueMarkup },
+      { key: "Backspace", run: deleteMarkupBackward }
+  ];
+  const htmlNoMatch = /*@__PURE__*/html({ matchClosingTags: false });
+  /**
+  Markdown language support.
+  */
+  function markdown(config = {}) {
+      let { codeLanguages, defaultCodeLanguage, addKeymap = true, base: { parser } = commonmarkLanguage, completeHTMLTags = true, pasteURLAsLink: pasteURL = true, htmlTagLanguage = htmlNoMatch } = config;
+      if (!(parser instanceof MarkdownParser))
+          throw new RangeError("Base parser provided to `markdown` should be a Markdown parser");
+      let extensions = config.extensions ? [config.extensions] : [];
+      let support = [htmlTagLanguage.support, headerIndent], defaultCode;
+      if (pasteURL)
+          support.push(pasteURLAsLink);
+      if (defaultCodeLanguage instanceof LanguageSupport) {
+          support.push(defaultCodeLanguage.support);
+          defaultCode = defaultCodeLanguage.language;
+      }
+      else if (defaultCodeLanguage) {
+          defaultCode = defaultCodeLanguage;
+      }
+      let codeParser = codeLanguages || defaultCode ? getCodeParser(codeLanguages, defaultCode) : undefined;
+      extensions.push(parseCode({ codeParser, htmlParser: htmlTagLanguage.language.parser }));
+      if (addKeymap)
+          support.push(Prec.high(keymap.of(markdownKeymap)));
+      let lang = mkLang(parser.configure(extensions));
+      if (completeHTMLTags)
+          support.push(lang.data.of({ autocomplete: htmlTagCompletion }));
+      return new LanguageSupport(lang, support);
+  }
+  function htmlTagCompletion(context) {
+      let { state, pos } = context, m = /<[:\-\.\w\u00b7-\uffff]*$/.exec(state.sliceDoc(pos - 25, pos));
+      if (!m)
+          return null;
+      let tree = syntaxTree(state).resolveInner(pos, -1);
+      while (tree && !tree.type.isTop) {
+          if (tree.name == "CodeBlock" || tree.name == "FencedCode" || tree.name == "ProcessingInstructionBlock" ||
+              tree.name == "CommentBlock" || tree.name == "Link" || tree.name == "Image")
+              return null;
+          tree = tree.parent;
+      }
+      return {
+          from: pos - m[0].length, to: pos,
+          options: htmlTagCompletions(),
+          validFor: /^<[:\-\.\w\u00b7-\uffff]*$/
+      };
+  }
+  let _tagCompletions = null;
+  function htmlTagCompletions() {
+      if (_tagCompletions)
+          return _tagCompletions;
+      let result = htmlCompletionSource(new CompletionContext(EditorState.create({ extensions: htmlNoMatch }), 0, true));
+      return _tagCompletions = result ? result.options : [];
+  }
+  const nonPlainText = /code|horizontalrule|html|link|comment|processing|escape|entity|image|mark|url/i;
+  /**
+  An extension that intercepts pastes when the pasted content looks
+  like a URL and the selection is non-empty and selects regular
+  text, making the selection a link with the pasted URL as target.
+  */
+  const pasteURLAsLink = /*@__PURE__*/EditorView.domEventHandlers({
+      paste: (event, view) => {
+          var _a;
+          let { main } = view.state.selection;
+          if (main.empty)
+              return false;
+          let link = (_a = event.clipboardData) === null || _a === void 0 ? void 0 : _a.getData("text/plain");
+          if (!link || !/^(https?:\/\/|mailto:|xmpp:|www\.)/.test(link))
+              return false;
+          if (/^www\./.test(link))
+              link = "https://" + link;
+          if (!markdownLanguage.isActiveAt(view.state, main.from, 1))
+              return false;
+          let tree = syntaxTree(view.state), crossesNode = false;
+          // Verify that no nodes are started/ended between the selection
+          // points, and we're not inside any non-plain-text construct.
+          tree.iterate({
+              from: main.from, to: main.to,
+              enter: node => { if (node.from > main.from || nonPlainText.test(node.name))
+                  crossesNode = true; },
+              leave: node => { if (node.to < main.to)
+                  crossesNode = true; }
+          });
+          if (crossesNode)
+              return false;
+          view.dispatch({
+              changes: [{ from: main.from, insert: "[" }, { from: main.to, insert: `](${link})` }],
+              userEvent: "input.paste",
+              scrollIntoView: true
+          });
+          return true;
+      }
+  });
+
+  // This file was generated by lezer-generator. You probably shouldn't edit it.
+  const StartTag = 1,
+    StartCloseTag = 2,
+    MissingCloseTag = 3,
+    mismatchedStartCloseTag = 4,
+    incompleteStartCloseTag = 5,
+    commentContent$1 = 36,
+    piContent$1 = 37,
+    cdataContent$1 = 38,
+    Element$1 = 11,
+    OpenTag = 13;
+
+  /* Hand-written tokenizer for XML tag matching. */
+
+  function nameChar(ch) {
+    return ch == 45 || ch == 46 || ch == 58 || ch >= 65 && ch <= 90 || ch == 95 || ch >= 97 && ch <= 122 || ch >= 161
+  }
+
+  function isSpace(ch) {
+    return ch == 9 || ch == 10 || ch == 13 || ch == 32
+  }
+
+  let cachedName = null, cachedInput = null, cachedPos = 0;
+  function tagNameAfter(input, offset) {
+    let pos = input.pos + offset;
+    if (cachedInput == input && cachedPos == pos) return cachedName
+    while (isSpace(input.peek(offset))) offset++;
+    let name = "";
+    for (;;) {
+      let next = input.peek(offset);
+      if (!nameChar(next)) break
+      name += String.fromCharCode(next);
+      offset++;
+    }
+    cachedInput = input; cachedPos = pos;
+    return cachedName = name || null
+  }
+
+  function ElementContext(name, parent) {
+    this.name = name;
+    this.parent = parent;
+  }
+
+  const elementContext = new ContextTracker({
+    start: null,
+    shift(context, term, stack, input) {
+      return term == StartTag ? new ElementContext(tagNameAfter(input, 1) || "", context) : context
+    },
+    reduce(context, term) {
+      return term == Element$1 && context ? context.parent : context
+    },
+    reuse(context, node, _stack, input) {
+      let type = node.type.id;
+      return type == StartTag || type == OpenTag
+        ? new ElementContext(tagNameAfter(input, 1) || "", context) : context
+    },
+    strict: false
+  });
+
+  const startTag = new ExternalTokenizer((input, stack) => {
+    if (input.next != 60 /* '<' */) return
+    input.advance();
+    if (input.next == 47 /* '/' */) {
+      input.advance();
+      let name = tagNameAfter(input, 0);
+      if (!name) return input.acceptToken(incompleteStartCloseTag)
+      if (stack.context && name == stack.context.name) return input.acceptToken(StartCloseTag)
+      for (let cx = stack.context; cx; cx = cx.parent) if (cx.name == name) return input.acceptToken(MissingCloseTag, -2)
+      input.acceptToken(mismatchedStartCloseTag);
+    } else if (input.next != 33 /* '!' */ && input.next != 63 /* '?' */) {
+      return input.acceptToken(StartTag)
+    }
+  }, {contextual: true});
+
+  function scanTo(type, end) {
+    return new ExternalTokenizer(input => {
+      let len = 0, first = end.charCodeAt(0);
+      scan: for (;; input.advance(), len++) {
+        if (input.next < 0) break
+        if (input.next == first) {
+          for (let i = 1; i < end.length; i++)
+            if (input.peek(i) != end.charCodeAt(i)) continue scan
+          break
+        }
+      }
+      if (len) input.acceptToken(type);
+    })
+  }
+
+  const commentContent = scanTo(commentContent$1, "-->");
+  const piContent = scanTo(piContent$1, "?>");
+  const cdataContent = scanTo(cdataContent$1, "]]>");
+
+  const xmlHighlighting = styleTags({
+    Text: tags$1.content,
+    "StartTag StartCloseTag EndTag SelfCloseEndTag": tags$1.angleBracket,
+    TagName: tags$1.tagName,
+    "MismatchedCloseTag/TagName": [tags$1.tagName, tags$1.invalid],
+    AttributeName: tags$1.attributeName,
+    AttributeValue: tags$1.attributeValue,
+    Is: tags$1.definitionOperator,
+    "EntityReference CharacterReference": tags$1.character,
+    Comment: tags$1.blockComment,
+    ProcessingInst: tags$1.processingInstruction,
+    DoctypeDecl: tags$1.documentMeta,
+    Cdata: tags$1.special(tags$1.string)
+  });
+
+  // This file was generated by lezer-generator. You probably shouldn't edit it.
+  const parser = LRParser.deserialize({
+    version: 14,
+    states: ",lOQOaOOOrOxO'#CfOzOpO'#CiO!tOaO'#CgOOOP'#Cg'#CgO!{OrO'#CrO#TOtO'#CsO#]OpO'#CtOOOP'#DT'#DTOOOP'#Cv'#CvQQOaOOOOOW'#Cw'#CwO#eOxO,59QOOOP,59Q,59QOOOO'#Cx'#CxO#mOpO,59TO#uO!bO,59TOOOP'#C|'#C|O$TOaO,59RO$[OpO'#CoOOOP,59R,59ROOOQ'#C}'#C}O$dOrO,59^OOOP,59^,59^OOOS'#DO'#DOO$lOtO,59_OOOP,59_,59_O$tOpO,59`O$|OpO,59`OOOP-E6t-E6tOOOW-E6u-E6uOOOP1G.l1G.lOOOO-E6v-E6vO%UO!bO1G.oO%UO!bO1G.oO%dOpO'#CkO%lO!bO'#CyO%zO!bO1G.oOOOP1G.o1G.oOOOP1G.w1G.wOOOP-E6z-E6zOOOP1G.m1G.mO&VOpO,59ZO&_OpO,59ZOOOQ-E6{-E6{OOOP1G.x1G.xOOOS-E6|-E6|OOOP1G.y1G.yO&gOpO1G.zO&gOpO1G.zOOOP1G.z1G.zO&oO!bO7+$ZO&}O!bO7+$ZOOOP7+$Z7+$ZOOOP7+$c7+$cO'YOpO,59VO'bOpO,59VO'mO!bO,59eOOOO-E6w-E6wO'{OpO1G.uO'{OpO1G.uOOOP1G.u1G.uO(TOpO7+$fOOOP7+$f7+$fO(]O!bO<<GuOOOP<<Gu<<GuOOOP<<G}<<G}O'bOpO1G.qO'bOpO1G.qO(hO#tO'#CnO(vO&jO'#CnOOOO1G.q1G.qO)UOpO7+$aOOOP7+$a7+$aOOOP<<HQ<<HQOOOPAN=aAN=aOOOPAN=iAN=iO'bOpO7+$]OOOO7+$]7+$]OOOO'#Cz'#CzO)^O#tO,59YOOOO,59Y,59YOOOO'#C{'#C{O)lO&jO,59YOOOP<<G{<<G{OOOO<<Gw<<GwOOOO-E6x-E6xOOOO1G.t1G.tOOOO-E6y-E6y",
+    stateData: ")z~OPQOSVOTWOVWOWWOXWOiXOyPO!QTO!SUO~OvZOx]O~O^`Oz^O~OPQOQcOSVOTWOVWOWWOXWOyPO!QTO!SUO~ORdO~P!SOteO!PgO~OuhO!RjO~O^lOz^O~OvZOxoO~O^qOz^O~O[vO`sOdwOz^O~ORyO~P!SO^{Oz^O~OteO!P}O~OuhO!R!PO~O^!QOz^O~O[!SOz^O~O[!VO`sOd!WOz^O~Oa!YOz^O~Oz^O[mX`mXdmX~O[!VO`sOd!WO~O^!]Oz^O~O[!_Oz^O~O[!aOz^O~O[!cO`sOd!dOz^O~O[!cO`sOd!dO~Oa!eOz^O~Oz^O{!gO}!hO~Oz^O[ma`madma~O[!kOz^O~O[!lOz^O~O[!mO`sOd!nO~OW!qOX!qO{!sO|!qO~OW!tOX!tO}!sO!O!tO~O[!vOz^O~OW!qOX!qO{!yO|!qO~OW!tOX!tO}!yO!O!tO~O",
+    goto: "%cxPPPPPPPPPPyyP!PP!VPP!`!jP!pyyyP!v!|#S$[$k$q$w$}%TPPPP%ZXWORYbXRORYb_t`qru!T!U!bQ!i!YS!p!e!fR!w!oQdRRybXSORYbQYORmYQ[PRn[Q_QQkVjp_krz!R!T!X!Z!^!`!f!j!oQr`QzcQ!RlQ!TqQ!XsQ!ZtQ!^{Q!`!QQ!f!YQ!j!]R!o!eQu`S!UqrU![u!U!bR!b!TQ!r!gR!x!rQ!u!hR!z!uQbRRxbQfTR|fQiUR!OiSXOYTaRb",
+    nodeNames: "⚠ StartTag StartCloseTag MissingCloseTag StartCloseTag StartCloseTag Document Text EntityReference CharacterReference Cdata Element EndTag OpenTag TagName Attribute AttributeName Is AttributeValue CloseTag SelfCloseEndTag SelfClosingTag Comment ProcessingInst MismatchedCloseTag DoctypeDecl",
+    maxTerm: 50,
+    context: elementContext,
+    nodeProps: [
+      ["closedBy", 1,"SelfCloseEndTag EndTag",13,"CloseTag MissingCloseTag"],
+      ["openedBy", 12,"StartTag StartCloseTag",19,"OpenTag",20,"StartTag"],
+      ["isolate", -6,13,18,19,21,22,24,""]
+    ],
+    propSources: [xmlHighlighting],
+    skippedNodes: [0],
+    repeatNodeCount: 9,
+    tokenData: "!)v~R!YOX$qXY)iYZ)iZ]$q]^)i^p$qpq)iqr$qrs*vsv$qvw+fwx/ix}$q}!O0[!O!P$q!P!Q2z!Q![$q![!]4n!]!^$q!^!_8U!_!`!#t!`!a!$l!a!b!%d!b!c$q!c!}4n!}#P$q#P#Q!'W#Q#R$q#R#S4n#S#T$q#T#o4n#o%W$q%W%o4n%o%p$q%p&a4n&a&b$q&b1p4n1p4U$q4U4d4n4d4e$q4e$IS4n$IS$I`$q$I`$Ib4n$Ib$Kh$q$Kh%#t4n%#t&/x$q&/x&Et4n&Et&FV$q&FV;'S4n;'S;:j8O;:j;=`)c<%l?&r$q?&r?Ah4n?Ah?BY$q?BY?Mn4n?MnO$qi$zXVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qa%nVVP!O`Ov%gwx&Tx!^%g!^!_&o!_;'S%g;'S;=`'W<%lO%gP&YTVPOv&Tw!^&T!_;'S&T;'S;=`&i<%lO&TP&lP;=`<%l&T`&tS!O`Ov&ox;'S&o;'S;=`'Q<%lO&o`'TP;=`<%l&oa'ZP;=`<%l%gX'eWVP|WOr'^rs&Tsv'^w!^'^!^!_'}!_;'S'^;'S;=`(i<%lO'^W(ST|WOr'}sv'}w;'S'};'S;=`(c<%lO'}W(fP;=`<%l'}X(lP;=`<%l'^h(vV|W!O`Or(ors&osv(owx'}x;'S(o;'S;=`)]<%lO(oh)`P;=`<%l(oi)fP;=`<%l$qo)t`VP|W!O`zUOX$qXY)iYZ)iZ]$q]^)i^p$qpq)iqr$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qk+PV{YVP!O`Ov%gwx&Tx!^%g!^!_&o!_;'S%g;'S;=`'W<%lO%g~+iast,n![!]-r!c!}-r#R#S-r#T#o-r%W%o-r%p&a-r&b1p-r4U4d-r4e$IS-r$I`$Ib-r$Kh%#t-r&/x&Et-r&FV;'S-r;'S;:j/c?&r?Ah-r?BY?Mn-r~,qQ!Q![,w#l#m-V~,zQ!Q![,w!]!^-Q~-VOX~~-YR!Q![-c!c!i-c#T#Z-c~-fS!Q![-c!]!^-Q!c!i-c#T#Z-c~-ug}!O-r!O!P-r!Q![-r![!]-r!]!^/^!c!}-r#R#S-r#T#o-r$}%O-r%W%o-r%p&a-r&b1p-r1p4U-r4U4d-r4e$IS-r$I`$Ib-r$Je$Jg-r$Kh%#t-r&/x&Et-r&FV;'S-r;'S;:j/c?&r?Ah-r?BY?Mn-r~/cOW~~/fP;=`<%l-rk/rW}bVP|WOr'^rs&Tsv'^w!^'^!^!_'}!_;'S'^;'S;=`(i<%lO'^k0eZVP|W!O`Or$qrs%gsv$qwx'^x}$q}!O1W!O!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qk1aZVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_!`$q!`!a2S!a;'S$q;'S;=`)c<%lO$qk2_X!PQVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qm3TZVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_!`$q!`!a3v!a;'S$q;'S;=`)c<%lO$qm4RXdSVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qo4{!P`S^QVP|W!O`Or$qrs%gsv$qwx'^x}$q}!O4n!O!P4n!P!Q$q!Q![4n![!]4n!]!^$q!^!_(o!_!c$q!c!}4n!}#R$q#R#S4n#S#T$q#T#o4n#o$}$q$}%O4n%O%W$q%W%o4n%o%p$q%p&a4n&a&b$q&b1p4n1p4U4n4U4d4n4d4e$q4e$IS4n$IS$I`$q$I`$Ib4n$Ib$Je$q$Je$Jg4n$Jg$Kh$q$Kh%#t4n%#t&/x$q&/x&Et4n&Et&FV$q&FV;'S4n;'S;:j8O;:j;=`)c<%l?&r$q?&r?Ah4n?Ah?BY$q?BY?Mn4n?MnO$qo8RP;=`<%l4ni8]Y|W!O`Oq(oqr8{rs&osv(owx'}x!a(o!a!b!#U!b;'S(o;'S;=`)]<%lO(oi9S_|W!O`Or(ors&osv(owx'}x}(o}!O:R!O!f(o!f!g;e!g!}(o!}#ODh#O#W(o#W#XLp#X;'S(o;'S;=`)]<%lO(oi:YX|W!O`Or(ors&osv(owx'}x}(o}!O:u!O;'S(o;'S;=`)]<%lO(oi;OV!QP|W!O`Or(ors&osv(owx'}x;'S(o;'S;=`)]<%lO(oi;lX|W!O`Or(ors&osv(owx'}x!q(o!q!r<X!r;'S(o;'S;=`)]<%lO(oi<`X|W!O`Or(ors&osv(owx'}x!e(o!e!f<{!f;'S(o;'S;=`)]<%lO(oi=SX|W!O`Or(ors&osv(owx'}x!v(o!v!w=o!w;'S(o;'S;=`)]<%lO(oi=vX|W!O`Or(ors&osv(owx'}x!{(o!{!|>c!|;'S(o;'S;=`)]<%lO(oi>jX|W!O`Or(ors&osv(owx'}x!r(o!r!s?V!s;'S(o;'S;=`)]<%lO(oi?^X|W!O`Or(ors&osv(owx'}x!g(o!g!h?y!h;'S(o;'S;=`)]<%lO(oi@QY|W!O`Or?yrs@psv?yvwA[wxBdx!`?y!`!aCr!a;'S?y;'S;=`Db<%lO?ya@uV!O`Ov@pvxA[x!`@p!`!aAy!a;'S@p;'S;=`B^<%lO@pPA_TO!`A[!`!aAn!a;'SA[;'S;=`As<%lOA[PAsOiPPAvP;=`<%lA[aBQSiP!O`Ov&ox;'S&o;'S;=`'Q<%lO&oaBaP;=`<%l@pXBiX|WOrBdrsA[svBdvwA[w!`Bd!`!aCU!a;'SBd;'S;=`Cl<%lOBdXC]TiP|WOr'}sv'}w;'S'};'S;=`(c<%lO'}XCoP;=`<%lBdiC{ViP|W!O`Or(ors&osv(owx'}x;'S(o;'S;=`)]<%lO(oiDeP;=`<%l?yiDoZ|W!O`Or(ors&osv(owx'}x!e(o!e!fEb!f#V(o#V#WIr#W;'S(o;'S;=`)]<%lO(oiEiX|W!O`Or(ors&osv(owx'}x!f(o!f!gFU!g;'S(o;'S;=`)]<%lO(oiF]X|W!O`Or(ors&osv(owx'}x!c(o!c!dFx!d;'S(o;'S;=`)]<%lO(oiGPX|W!O`Or(ors&osv(owx'}x!v(o!v!wGl!w;'S(o;'S;=`)]<%lO(oiGsX|W!O`Or(ors&osv(owx'}x!c(o!c!dH`!d;'S(o;'S;=`)]<%lO(oiHgX|W!O`Or(ors&osv(owx'}x!}(o!}#OIS#O;'S(o;'S;=`)]<%lO(oiI]V|W!O`yPOr(ors&osv(owx'}x;'S(o;'S;=`)]<%lO(oiIyX|W!O`Or(ors&osv(owx'}x#W(o#W#XJf#X;'S(o;'S;=`)]<%lO(oiJmX|W!O`Or(ors&osv(owx'}x#T(o#T#UKY#U;'S(o;'S;=`)]<%lO(oiKaX|W!O`Or(ors&osv(owx'}x#h(o#h#iK|#i;'S(o;'S;=`)]<%lO(oiLTX|W!O`Or(ors&osv(owx'}x#T(o#T#UH`#U;'S(o;'S;=`)]<%lO(oiLwX|W!O`Or(ors&osv(owx'}x#c(o#c#dMd#d;'S(o;'S;=`)]<%lO(oiMkX|W!O`Or(ors&osv(owx'}x#V(o#V#WNW#W;'S(o;'S;=`)]<%lO(oiN_X|W!O`Or(ors&osv(owx'}x#h(o#h#iNz#i;'S(o;'S;=`)]<%lO(oi! RX|W!O`Or(ors&osv(owx'}x#m(o#m#n! n#n;'S(o;'S;=`)]<%lO(oi! uX|W!O`Or(ors&osv(owx'}x#d(o#d#e!!b#e;'S(o;'S;=`)]<%lO(oi!!iX|W!O`Or(ors&osv(owx'}x#X(o#X#Y?y#Y;'S(o;'S;=`)]<%lO(oi!#_V!SP|W!O`Or(ors&osv(owx'}x;'S(o;'S;=`)]<%lO(ok!$PXaQVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qo!$wX[UVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qk!%mZVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_!`$q!`!a!&`!a;'S$q;'S;=`)c<%lO$qk!&kX!RQVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$qk!'aZVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_#P$q#P#Q!(S#Q;'S$q;'S;=`)c<%lO$qk!(]ZVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_!`$q!`!a!)O!a;'S$q;'S;=`)c<%lO$qk!)ZXxQVP|W!O`Or$qrs%gsv$qwx'^x!^$q!^!_(o!_;'S$q;'S;=`)c<%lO$q",
+    tokenizers: [startTag, commentContent, piContent, cdataContent, 0, 1, 2, 3, 4],
+    topRules: {"Document":[0,6]},
+    tokenPrec: 0
+  });
+
+  function tagName(doc, tag) {
+      let name = tag && tag.getChild("TagName");
+      return name ? doc.sliceString(name.from, name.to) : "";
+  }
+  function elementName$1(doc, tree) {
+      let tag = tree && tree.firstChild;
+      return !tag || tag.name != "OpenTag" ? "" : tagName(doc, tag);
+  }
+  function attrName(doc, tag, pos) {
+      let attr = tag && tag.getChildren("Attribute").find(a => a.from <= pos && a.to >= pos);
+      let name = attr && attr.getChild("AttributeName");
+      return name ? doc.sliceString(name.from, name.to) : "";
+  }
+  function findParentElement(tree) {
+      for (let cur = tree && tree.parent; cur; cur = cur.parent)
+          if (cur.name == "Element")
+              return cur;
+      return null;
+  }
+  function findLocation(state, pos) {
+      var _a;
+      let at = syntaxTree(state).resolveInner(pos, -1), inTag = null;
+      for (let cur = at; !inTag && cur.parent; cur = cur.parent)
+          if (cur.name == "OpenTag" || cur.name == "CloseTag" || cur.name == "SelfClosingTag" || cur.name == "MismatchedCloseTag")
+              inTag = cur;
+      if (inTag && (inTag.to > pos || inTag.lastChild.type.isError)) {
+          let elt = inTag.parent;
+          if (at.name == "TagName")
+              return inTag.name == "CloseTag" || inTag.name == "MismatchedCloseTag"
+                  ? { type: "closeTag", from: at.from, context: elt }
+                  : { type: "openTag", from: at.from, context: findParentElement(elt) };
+          if (at.name == "AttributeName")
+              return { type: "attrName", from: at.from, context: inTag };
+          if (at.name == "AttributeValue")
+              return { type: "attrValue", from: at.from, context: inTag };
+          let before = at == inTag || at.name == "Attribute" ? at.childBefore(pos) : at;
+          if ((before === null || before === void 0 ? void 0 : before.name) == "StartTag")
+              return { type: "openTag", from: pos, context: findParentElement(elt) };
+          if ((before === null || before === void 0 ? void 0 : before.name) == "StartCloseTag" && before.to <= pos)
+              return { type: "closeTag", from: pos, context: elt };
+          if ((before === null || before === void 0 ? void 0 : before.name) == "Is")
+              return { type: "attrValue", from: pos, context: inTag };
+          if (before)
+              return { type: "attrName", from: pos, context: inTag };
+          return null;
+      }
+      else if (at.name == "StartCloseTag") {
+          return { type: "closeTag", from: pos, context: at.parent };
+      }
+      while (at.parent && at.to == pos && !((_a = at.lastChild) === null || _a === void 0 ? void 0 : _a.type.isError))
+          at = at.parent;
+      if (at.name == "Element" || at.name == "Text" || at.name == "Document")
+          return { type: "tag", from: pos, context: at.name == "Element" ? at : findParentElement(at) };
+      return null;
+  }
+  class Element {
+      constructor(spec, attrs, attrValues) {
+          this.attrs = attrs;
+          this.attrValues = attrValues;
+          this.children = [];
+          this.name = spec.name;
+          this.completion = Object.assign(Object.assign({ type: "type" }, spec.completion || {}), { label: this.name });
+          this.openCompletion = Object.assign(Object.assign({}, this.completion), { label: "<" + this.name });
+          this.closeCompletion = Object.assign(Object.assign({}, this.completion), { label: "</" + this.name + ">", boost: 2 });
+          this.closeNameCompletion = Object.assign(Object.assign({}, this.completion), { label: this.name + ">" });
+          this.text = spec.textContent ? spec.textContent.map(s => ({ label: s, type: "text" })) : [];
+      }
+  }
+  const Identifier = /^[:\-\.\w\u00b7-\uffff]*$/;
+  function attrCompletion(spec) {
+      return Object.assign(Object.assign({ type: "property" }, spec.completion || {}), { label: spec.name });
+  }
+  function valueCompletion(spec) {
+      return typeof spec == "string" ? { label: `"${spec}"`, type: "constant" }
+          : /^"/.test(spec.label) ? spec
+              : Object.assign(Object.assign({}, spec), { label: `"${spec.label}"` });
+  }
+  /**
+  Create a completion source for the given schema.
+  */
+  function completeFromSchema(eltSpecs, attrSpecs) {
+      let allAttrs = [], globalAttrs = [];
+      let attrValues = Object.create(null);
+      for (let s of attrSpecs) {
+          let completion = attrCompletion(s);
+          allAttrs.push(completion);
+          if (s.global)
+              globalAttrs.push(completion);
+          if (s.values)
+              attrValues[s.name] = s.values.map(valueCompletion);
+      }
+      let allElements = [], topElements = [];
+      let byName = Object.create(null);
+      for (let s of eltSpecs) {
+          let attrs = globalAttrs, attrVals = attrValues;
+          if (s.attributes)
+              attrs = attrs.concat(s.attributes.map(s => {
+                  if (typeof s == "string")
+                      return allAttrs.find(a => a.label == s) || { label: s, type: "property" };
+                  if (s.values) {
+                      if (attrVals == attrValues)
+                          attrVals = Object.create(attrVals);
+                      attrVals[s.name] = s.values.map(valueCompletion);
+                  }
+                  return attrCompletion(s);
+              }));
+          let elt = new Element(s, attrs, attrVals);
+          byName[elt.name] = elt;
+          allElements.push(elt);
+          if (s.top)
+              topElements.push(elt);
+      }
+      if (!topElements.length)
+          topElements = allElements;
+      for (let i = 0; i < allElements.length; i++) {
+          let s = eltSpecs[i], elt = allElements[i];
+          if (s.children) {
+              for (let ch of s.children)
+                  if (byName[ch])
+                      elt.children.push(byName[ch]);
+          }
+          else {
+              elt.children = allElements;
+          }
+      }
+      return cx => {
+          var _a;
+          let { doc } = cx.state, loc = findLocation(cx.state, cx.pos);
+          if (!loc || (loc.type == "tag" && !cx.explicit))
+              return null;
+          let { type, from, context } = loc;
+          if (type == "openTag") {
+              let children = topElements;
+              let parentName = elementName$1(doc, context);
+              if (parentName) {
+                  let parent = byName[parentName];
+                  children = (parent === null || parent === void 0 ? void 0 : parent.children) || allElements;
+              }
+              return {
+                  from,
+                  options: children.map(ch => ch.completion),
+                  validFor: Identifier
+              };
+          }
+          else if (type == "closeTag") {
+              let parentName = elementName$1(doc, context);
+              return parentName ? {
+                  from,
+                  to: cx.pos + (doc.sliceString(cx.pos, cx.pos + 1) == ">" ? 1 : 0),
+                  options: [((_a = byName[parentName]) === null || _a === void 0 ? void 0 : _a.closeNameCompletion) || { label: parentName + ">", type: "type" }],
+                  validFor: Identifier
+              } : null;
+          }
+          else if (type == "attrName") {
+              let parent = byName[tagName(doc, context)];
+              return {
+                  from,
+                  options: (parent === null || parent === void 0 ? void 0 : parent.attrs) || globalAttrs,
+                  validFor: Identifier
+              };
+          }
+          else if (type == "attrValue") {
+              let attr = attrName(doc, context, from);
+              if (!attr)
+                  return null;
+              let parent = byName[tagName(doc, context)];
+              let values = ((parent === null || parent === void 0 ? void 0 : parent.attrValues) || attrValues)[attr];
+              if (!values || !values.length)
+                  return null;
+              return {
+                  from,
+                  to: cx.pos + (doc.sliceString(cx.pos, cx.pos + 1) == '"' ? 1 : 0),
+                  options: values,
+                  validFor: /^"[^"]*"?$/
+              };
+          }
+          else if (type == "tag") {
+              let parentName = elementName$1(doc, context), parent = byName[parentName];
+              let closing = [], last = context && context.lastChild;
+              if (parentName && (!last || last.name != "CloseTag" || tagName(doc, last) != parentName))
+                  closing.push(parent ? parent.closeCompletion : { label: "</" + parentName + ">", type: "type", boost: 2 });
+              let options = closing.concat(((parent === null || parent === void 0 ? void 0 : parent.children) || (context ? allElements : topElements)).map(e => e.openCompletion));
+              if (context && (parent === null || parent === void 0 ? void 0 : parent.text.length)) {
+                  let openTag = context.firstChild;
+                  if (openTag.to > cx.pos - 20 && !/\S/.test(cx.state.sliceDoc(openTag.to, cx.pos)))
+                      options = options.concat(parent.text);
+              }
+              return {
+                  from,
+                  options,
+                  validFor: /^<\/?[:\-\.\w\u00b7-\uffff]*$/
+              };
+          }
+          else {
+              return null;
+          }
+      };
+  }
+
+  /**
+  A language provider based on the [Lezer XML
+  parser](https://github.com/lezer-parser/xml), extended with
+  highlighting and indentation information.
+  */
+  const xmlLanguage = /*@__PURE__*/LRLanguage.define({
+      name: "xml",
+      parser: /*@__PURE__*/parser.configure({
+          props: [
+              /*@__PURE__*/indentNodeProp.add({
+                  Element(context) {
+                      let closed = /^\s*<\//.test(context.textAfter);
+                      return context.lineIndent(context.node.from) + (closed ? 0 : context.unit);
+                  },
+                  "OpenTag CloseTag SelfClosingTag"(context) {
+                      return context.column(context.node.from) + context.unit;
+                  }
+              }),
+              /*@__PURE__*/foldNodeProp.add({
+                  Element(subtree) {
+                      let first = subtree.firstChild, last = subtree.lastChild;
+                      if (!first || first.name != "OpenTag")
+                          return null;
+                      return { from: first.to, to: last.name == "CloseTag" ? last.from : subtree.to };
+                  }
+              }),
+              /*@__PURE__*/bracketMatchingHandle.add({
+                  "OpenTag CloseTag": node => node.getChild("TagName")
+              })
+          ]
+      }),
+      languageData: {
+          commentTokens: { block: { open: "<!--", close: "-->" } },
+          indentOnInput: /^\s*<\/$/
+      }
+  });
+  /**
+  XML language support. Includes schema-based autocompletion when
+  configured.
+  */
+  function xml(conf = {}) {
+      let support = [xmlLanguage.data.of({
+              autocomplete: completeFromSchema(conf.elements || [], conf.attributes || [])
+          })];
+      if (conf.autoCloseTags !== false)
+          support.push(autoCloseTags);
+      return new LanguageSupport(xmlLanguage, support);
+  }
+  function elementName(doc, tree, max = doc.length) {
+      if (!tree)
+          return "";
+      let tag = tree.firstChild;
+      let name = tag && tag.getChild("TagName");
+      return name ? doc.sliceString(name.from, Math.min(name.to, max)) : "";
+  }
+  /**
+  Extension that will automatically insert close tags when a `>` or
+  `/` is typed.
+  */
+  const autoCloseTags = /*@__PURE__*/EditorView.inputHandler.of((view, from, to, text, insertTransaction) => {
+      if (view.composing || view.state.readOnly || from != to || (text != ">" && text != "/") ||
+          !xmlLanguage.isActiveAt(view.state, from, -1))
+          return false;
+      let base = insertTransaction(), { state } = base;
+      let closeTags = state.changeByRange(range => {
+          var _a, _b, _c;
+          let { head } = range;
+          let didType = state.doc.sliceString(head - 1, head) == text;
+          let after = syntaxTree(state).resolveInner(head, -1), name;
+          if (didType && text == ">" && after.name == "EndTag") {
+              let tag = after.parent;
+              if (((_b = (_a = tag.parent) === null || _a === void 0 ? void 0 : _a.lastChild) === null || _b === void 0 ? void 0 : _b.name) != "CloseTag" &&
+                  (name = elementName(state.doc, tag.parent, head))) {
+                  let to = head + (state.doc.sliceString(head, head + 1) === ">" ? 1 : 0);
+                  let insert = `</${name}>`;
+                  return { range, changes: { from: head, to, insert } };
+              }
+          }
+          else if (didType && text == "/" && after.name == "StartCloseTag") {
+              let base = after.parent;
+              if (after.from == head - 2 && ((_c = base.lastChild) === null || _c === void 0 ? void 0 : _c.name) != "CloseTag" &&
+                  (name = elementName(state.doc, base, head))) {
+                  let to = head + (state.doc.sliceString(head, head + 1) === ">" ? 1 : 0);
+                  let insert = `${name}>`;
+                  return {
+                      range: EditorSelection.cursor(head + insert.length, -1),
+                      changes: { from: head, to, insert }
+                  };
+              }
+          }
+          return { range };
+      });
+      if (closeTags.changes.empty)
+          return false;
+      view.dispatch([
+          base,
+          state.update(closeTags, {
+              userEvent: "input.complete",
+              scrollIntoView: true
+          })
+      ]);
+      return true;
+  });
 
   // Create a class for the element
   class HoityToity extends HTMLElement {
@@ -29420,7 +32803,7 @@
         }
         .editor-container {
           height: 100%;
-          min-height: 300px;
+          /* min-height: 300px; */
         }
         /* CodeMirror will be styled within */
         .cm-editor {
@@ -29439,11 +32822,12 @@
       const language = this.getAttribute('language') || 'javascript';
       const theme = this.getAttribute('theme') || 'dark';
       const wrap = this.getAttribute('wrap') || false;
-      const initialValue = this.getAttribute('value') || this.getDefaultCode(language);
+      const initialValue = this.getAttribute('value') || "";
 
       // Build extensions array
       const extensions = [
         basicSetup,
+        keymap.of([indentWithTab]),
         this.getLanguageExtension(language)
       ];
 
@@ -29512,6 +32896,12 @@
     // Helper methods
     getLanguageExtension(language) {
       switch(language) {
+        case 'xml':
+          return xml();
+        case 'json':
+          return json();
+        case 'markdown':
+          return markdown();
         case 'html':
           return html();
         case 'css':
@@ -29523,45 +32913,6 @@
       }
     }
 
-    getDefaultCode(language) {
-      switch(language) {
-        case 'html':
-          return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
-<body>
-    <h1>Hello World!</h1>
-    <small>this is a live preview of the code below</small>
-</body>
-</html>`;
-        case 'css':
-          return `/* Your CSS here */
-body {
-  font-family: system-ui, sans-serif;
-  margin: 0;
-  padding: 20px;
-}
-
-h1, small {
-  color: orangered;
-}`;
-        case 'javascript':
-        case 'js':
-        default:
-          return `// Your JavaScript here (hit F12 to open up the standard console)
-function greet(name) {
-  const msg = \`Hello, \${name}!\`;
-  console.log(msg);
-  document.querySelector('h1').innerText = msg;
-}
-
-greet('World');`;
-      }
-    }
 
     updateLanguage(language) {
       // To change language, we need to recreate the editor
@@ -29575,6 +32926,7 @@ greet('World');`;
       // Build extensions array
       const extensions = [
         basicSetup,
+        keymap.of([indentWithTab]),
         this.getLanguageExtension(language)
       ];
 

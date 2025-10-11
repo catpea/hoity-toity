@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hoity Toity Language Support</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦊</text></svg>" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous" />
+    <script src="hoity-toity.js"></script>
+    <script src="codebin/output-preview.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+        }
+      }
+    </script>
+  </head>
+  <body>
+
+    <div class="container">
+
+      <div class="row mb-4">
+          <div class="col py-5">
+            <h1 class="fw-light">Hoity Toity Language Examples</h1> <p class="lead text-body-secondary">
+              A quick showcase of each language in a live, web‑based editor. Pick a tab, edit the code, and test the features.
+            <p>
+              <a href="index.html" class="btn btn-primary my-2">Code Bin</a> <a href="https://github.com/catpea/hoity-toity#readme" class="btn btn-secondary my-2">Project Homepage</a>
+            </p>
+          </div>
+      </div>
+
+      <div class="row mb-4">
+          <div class="col">
+              <h3>JavaScript <small style="font-size: .75rem;" class="text-body-secondary">A versatile programming language primarily used for web development, enabling dynamic and interactive webpage functionality.</small></h3>
+              <p class="text-secondary">Created in 1995 by Brendan Eich at Netscape, JavaScript was originally called LiveScript. It quickly became the de‑facto language for client‑side scripting, now powering over 95% of all websites. Interesting facts: it introduced the event‑driven model that made browsers interactive, and the language’s name was chosen for marketing synergy with Java despite having very different designs.</p>
+              <hoity-toity id="javascript" language="javascript"></hoity-toity>
+          </div>
+      </div>
+
+      <div class="row mb-4">
+          <div class="col">
+              <h3>CSS <small style="font-size: .75rem;" class="text-body-secondary">A stylesheet language used to describe the presentation of a document written in HTML, controlling layout, colors, and fonts.</small></h3>
+              <p class="text-secondary">Developed by the W3C and first released in 1996, CSS was authored by Håkon Wium Lie and Bert Bos. It separates style from content, enabling responsive designs that work across devices. Today it’s supported by every modern browser and underpins frameworks like Bootstrap. Fun facts: CSS 3 introduced modules such as Flexbox and Grid, radically changing layout capabilities, and the “cascading” rule resolves conflicts by specificity and source order.</p>
+              <hoity-toity id="css" language="css"></hoity-toity>
+          </div>
+      </div>
+
+      <div class="row mb-4">
+          <div class="col">
+              <h3>HTML <small style="font-size: .75rem;" class="text-body-secondary">The standard markup language for creating web pages, defining the structure and content of a document.</small></h3>
+              <p class="text-secondary">Tim Berners‑Lee wrote the first version of HTML in 1991 while at CERN. It provides the skeleton of web pages, using tags to denote headings, paragraphs, links, and more. HTML5, standardized in 2014, added native multimedia, canvas, and semantic elements, making it the backbone of modern web applications. Notable tidbits: the original HTML had only 18 tags.</p>
+              <hoity-toity id="html" language="html"></hoity-toity>
+          </div>
+      </div>
+
+      <div class="row mb-4">
+          <div class="col">
+              <h3>Markdown <small style="font-size: .75rem;" class="text-body-secondary">A lightweight markup language with plain-text formatting syntax, often used for formatting README files and writing on platforms like GitHub.</small></h3>
+              <p class="text-secondary">John Gruber created Markdown in 2004 with help from Aaron Swartz. It lets writers produce formatted text using simple symbols (e.g., * for italics, # for headings). Its simplicity led to widespread adoption on GitHub, Reddit, and many documentation sites. Interesting facts: many flavors exist (CommonMark, GitHub‑Flavored Markdown), and the language was deliberately designed to be readable as plain text.</p>
+              <hoity-toity id="markdown" language="markdown"></hoity-toity>
+          </div>
+      </div>
+
+      <div class="row mb-4">
+          <div class="col">
+              <h3>JSON <small style="font-size: .75rem;" class="text-body-secondary">A lightweight data interchange format that is easy for humans to read and write, and easy for machines to parse and generate.</small></h3>
+              <p class="text-secondary">Douglas Crockford formalized JSON in 2001 as a subset of JavaScript object literals. It quickly became the lingua franca for APIs because of its compactness and native support in most languages. Today it’s used in web services, configuration files, and NoSQL databases. Fun fact: despite its JavaScript roots, JSON is language‑agnostic and defined by RFC 8259.</p>
+              <hoity-toity id="json" language="json"></hoity-toity>
+          </div>
+      </div>
+
+      <div class="row mb-4">
+          <div class="col">
+              <h3>XML <small style="font-size: .75rem;" class="text-body-secondary">A markup language that defines a set of rules for encoding documents in a format that is both human-readable and machine-readable.</small></h3>
+              <p class="text-secondary">XML was released as a W3C recommendation in 1998, building on SGML. It provides a flexible way to structure data with custom tags, making it popular for document exchange, configuration, and SOAP web services. While its verbosity led to JSON’s rise for APIs, XML remains vital in industries like publishing and finance. Notable tidbits: XML supports namespaces to avoid tag collisions, and XSLT can transform XML into HTML or other formats.</p>
+              <hoity-toity id="xml" language="xml"></hoity-toity>
+          </div>
+      </div>
+
+    </div>
+
+    <script type="module">
+
+      const javascriptContent = document.getElementById("javascriptContent");
+      const cssContent = document.getElementById("cssContent");
+      const htmlContent = document.getElementById("htmlContent");
+      const markdownContent = document.getElementById("markdownContent");
+      const jsonContent = document.getElementById("jsonContent");
+      const xmlContent = document.getElementById("xmlContent");
+
+      const javascript = document.getElementById("javascript");
+      const css = document.getElementById("css");
+      const html = document.getElementById("html");
+      const markdown = document.getElementById("markdown");
+      const json = document.getElementById("json");
+      const xml = document.getElementById("xml");
+
+      javascript.setValue(dedent(javascriptContent.textContent));
+      css.setValue(dedent(cssContent.textContent));
+      html.setValue(dedent(htmlContent.textContent));
+      markdown.setValue(dedent(markdownContent.textContent));
+      json.setValue(dedent(jsonContent.textContent));
+      xml.setValue(dedent(xmlContent.textContent));
+
+      function dedent(str) {
+        const lines = str.split('\n');
+        const firstLine = lines.find(line => line.trim());
+        if (!firstLine) return str;
+        const indent = firstLine.match(/^\s*/)[0].length;
+        return lines.map(line => line.slice(indent)).join('\n').trim();
+      }
+
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+
+    <script type="text/plain" id="javascriptContent">
+      // Your JavaScript here (hit F12 to open up the standard console)
+      function greet(name) {
+        const msg = `Hello, ${name}!`;
+        console.log(msg);
+        document.querySelector('h1').innerText = msg;
+      }
+      greet('World');
+    </script>
+
+    <script type="text/plain" id="cssContent">
+      /* Your CSS here */
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+
+      h1, small {
+        color: orangered;
+      }
+    </script>
+
+    <script type="text/plain" id="htmlContent">
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Document</title>
+      </head>
+      <body>
+          <h1>Hello World!</h1>
+          <small>this is a live preview of the code below</small>
+      </body>
+      </html>
+    </script>
+
+    <script type="text/plain" id="markdownContent">
+      ## Newton's Cannonball
+
+      Newton's Cannonball is a thought experiment proposed by Sir Isaac Newton to illustrate the concept of orbital mechanics and gravity. It essentially describes how an object, if projected at a sufficient speed, would enter orbit around a celestial body instead of falling to its surface.
+
+      ### The Thought Experiment
+
+      1. Setup: Imagine a cannon positioned on top of a high mountain, aiming horizontally.
+
+      2. Initial Conditions: When the cannon is fired:
+        - Low Speed: The cannonball falls back to Earth.
+        - Moderate Speed: The cannonball travels a distance but eventually falls back to Earth.
+        - High Speed: At a certain velocity (around 7.9 km/s for Earth), the cannonball travels so fast that its curvature matches that of the Earth’s surface. This means it keeps falling towards Earth but never hits it, entering a stable orbit.
+
+      ### Key Takeaways
+
+      - The concept illustrates that orbital motion is essentially a balance between gravitational pull and the inertia of an object moving forward.
+      - It also emphasizes that the required speed for an orbit (orbital velocity) depends on the mass of the planet and the distance from its center.
+
+      ### Conclusion
+
+      Newton's thought experiment illustrates the relationship between gravity and motion, forming the basis for modern orbital mechanics. By understanding this principle, we can comprehend how satellites and the International Space Station maintain their orbits around Earth.
+
+      ---
+
+      This thought experiment is crucial in understanding how celestial bodies and artificial satellites function in space through controlled motions.
+    </script>
+
+    <script type="text/plain" id="jsonContent">
+      {
+        "name": "France",
+        "capital": "Paris",
+        "population": 67364357,
+        "area": 551695,
+        "currency": "Euro",
+        "languages": ["French"],
+        "region": "Europe",
+        "subregion": "Western Europe",
+        "flag": "https://upload.wikimedia.org/wikipedia/commons/c/c3/Flag_of_France.svg"
+      }
+    </script>
+
+    <script type="text/plain" id="xmlContent">
+      <note>
+        <to>Tove</to>
+        <from>Jani</from>
+        <heading>Reminder</heading>
+        <body>Don't forget me this weekend!</body>
+      </note>
+    </script>
+
+
+
+
+
+  </body>
+</html>

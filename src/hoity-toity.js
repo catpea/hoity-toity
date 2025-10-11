@@ -1,8 +1,14 @@
-import {EditorView, basicSetup} from "codemirror"
-import {javascript} from "@codemirror/lang-javascript"
-import {html} from "@codemirror/lang-html"
-import {css} from "@codemirror/lang-css"
-import {oneDark} from "@codemirror/theme-one-dark"
+import {EditorView, basicSetup } from "codemirror";
+import {keymap} from "@codemirror/view";
+import {indentWithTab} from "@codemirror/commands";
+import {oneDark} from "@codemirror/theme-one-dark";
+
+import {javascript} from "@codemirror/lang-javascript";
+import {html} from "@codemirror/lang-html";
+import {css} from "@codemirror/lang-css";
+import {json} from "@codemirror/lang-json";
+import {markdown} from "@codemirror/lang-markdown";
+import {xml} from "@codemirror/lang-xml";
 
 // Create a class for the element
 class HoityToity extends HTMLElement {
@@ -27,7 +33,7 @@ class HoityToity extends HTMLElement {
         }
         .editor-container {
           height: 100%;
-          min-height: 300px;
+          /* min-height: 300px; */
         }
         /* CodeMirror will be styled within */
         .cm-editor {
@@ -46,11 +52,12 @@ class HoityToity extends HTMLElement {
     const language = this.getAttribute('language') || 'javascript';
     const theme = this.getAttribute('theme') || 'dark';
     const wrap = this.getAttribute('wrap') || false;
-    const initialValue = this.getAttribute('value') || this.getDefaultCode(language);
+    const initialValue = this.getAttribute('value') || "";
 
     // Build extensions array
     const extensions = [
       basicSetup,
+      keymap.of([indentWithTab]),
       this.getLanguageExtension(language)
     ];
 
@@ -119,6 +126,12 @@ class HoityToity extends HTMLElement {
   // Helper methods
   getLanguageExtension(language) {
     switch(language) {
+      case 'xml':
+        return xml();
+      case 'json':
+        return json();
+      case 'markdown':
+        return markdown();
       case 'html':
         return html();
       case 'css':
@@ -130,45 +143,6 @@ class HoityToity extends HTMLElement {
     }
   }
 
-  getDefaultCode(language) {
-    switch(language) {
-      case 'html':
-        return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
-<body>
-    <h1>Hello World!</h1>
-    <small>this is a live preview of the code below</small>
-</body>
-</html>`;
-      case 'css':
-        return `/* Your CSS here */
-body {
-  font-family: system-ui, sans-serif;
-  margin: 0;
-  padding: 20px;
-}
-
-h1, small {
-  color: orangered;
-}`;
-      case 'javascript':
-      case 'js':
-      default:
-        return `// Your JavaScript here (hit F12 to open up the standard console)
-function greet(name) {
-  const msg = \`Hello, \${name}!\`;
-  console.log(msg);
-  document.querySelector('h1').innerText = msg;
-}
-
-greet('World');`;
-    }
-  }
 
   updateLanguage(language) {
     // To change language, we need to recreate the editor
@@ -182,6 +156,7 @@ greet('World');`;
     // Build extensions array
     const extensions = [
       basicSetup,
+      keymap.of([indentWithTab]),
       this.getLanguageExtension(language)
     ];
 
