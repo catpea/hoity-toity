@@ -1,6 +1,8 @@
 # hoity-toity
 Hoity Toity: Feature Packed Code Editor Web Component
 
+language support: javascript, css, html, markdown, json, and xml
+
 ```bash
 
 npm i hoity-toity;
